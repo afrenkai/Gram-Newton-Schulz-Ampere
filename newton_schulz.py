@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 import torch
+import triton_ns as triton_kernels
 
 # https://arxiv.org/pdf/2505.16932
 _unmodified_polar_express_coefficients = [
@@ -24,6 +25,15 @@ _TORCH_BE = SimpleNamespace(
     matmul_add=lambda A, B, C, beta: torch.baddbmm(C, A, B, beta=beta),
 )
 
+_TRITON_BE = SimpleNamespace(
+    symmetric_matmul=lambda A, B: A @ B,
+    symmetric_batch_matrix_matrix_product=lambda A, B, C, alpha=1, beta=1: triton_kernels.triton_baddbmm(
+        C, A, B, alpha=alpha, beta=beta
+    ),
+    matmul=lambda A, B: A @ B,
+    matmul_add=lambda A, B, C, beta: triton_kernels.triton_baddbmm(C, A, B, beta=beta),
+)
+
 
 class NewtonSchulz:
     def __init__(
@@ -31,19 +41,20 @@ class NewtonSchulz:
         eps: float = 1e-9,
         coeff: list[list[float]] | None = None,
         use_gram: bool = False,
+        use_triton: bool = False,
         gns_reset_iters: list[int] | None = None,
         compile_kwargs: dict = {"fullgraph": True, "mode": "reduce-overhead"},
     ):
         self.eps = eps
         self.coeff = coeff if coeff is not None else POLAR_EXPRESS_COEFFICIENTS
-        self.ops = _TORCH_BE
+        self.ops = _TRITON_BE if use_triton else _TORCH_BE
         self.use_gram = use_gram
+        self.use_triton = use_triton
         self.gns_reset_iters = gns_reset_iters
-        if compile_kwargs is not None:
+        if compile_kwargs is not None and not use_triton:
             self.__call__ = torch.compile(self.__call__, **compile_kwargs)
 
     def __call__(self, X: torch.Tensor) -> torch.Tensor:
-        """ """
 
         original_shape = X.size()
         if X.ndim == 2:
@@ -78,7 +89,7 @@ class NewtonSchulz:
             B = self.ops.symmetric_batch_matrix_matrix_product(
                 A, A, C=A, alpha=c, beta=b
             )
-            X = self.ops.matmul_add(B, X, C=X, beta=c)
+            X = self.ops.matmul_add(B, X, C=X, beta=a)
         return X
 
     def _gram_newton_schulz(self, X: torch.Tensor) -> torch.Tensor:

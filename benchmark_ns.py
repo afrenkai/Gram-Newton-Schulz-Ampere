@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Callable
 import torch
 from triton.testing import do_bench
-from newton_schultz import NewtonSchulz
+from newton_schulz import NewtonSchulz
 
 # https://x.com/YouJiacheng/status/1905861218138804534
 YOU_COEFFICIENTS = [
@@ -77,26 +77,25 @@ def main(args):
     torch.cuda.synchronize()
     time.sleep(1.0)
 
-    timing_standard_kernels = None
-    if can_use_kernels:
-        print("\n[2] Standard Newton-Schulz (Kernels)")
-        standard_kernels = NewtonSchulz(
-            eps=1e-7,
-            coeff=YOU_COEFFICIENTS,
-        )
+    standard_triton = NewtonSchulz(
+        eps=1e-9,
+        coeff=YOU_COEFFICIENTS,
+        use_gram=False,
+        gns_reset_iters=None,
+        use_triton=True,
+    )
+    _ = standard_triton(X)
+    torch.cuda.synchronize()
+    time.sleep(1.0)
 
-        _ = standard_kernels(X)
-        torch.cuda.synchronize()
-        time.sleep(1.0)
-
-        timing_standard_kernels = benchmark(
-            standard_kernels,
-            X,
-            warmup_iter=args.warmup_iter,
-            repeat_iter=args.repeat_iter,
-        )
-        torch.cuda.synchronize()
-        time.sleep(1.0)
+    timing_standard_triton = benchmark(
+        standard_triton,
+        X,
+        warmup_iter=args.warmup_iter,
+        repeat_iter=args.repeat_iter,
+    )
+    torch.cuda.synchronize()
+    time.sleep(1.0)
 
     gram_torch = NewtonSchulz(
         eps=1e-9,
@@ -117,40 +116,33 @@ def main(args):
     )
     torch.cuda.synchronize()
     time.sleep(1.0)
-    #
-    # timing_gram_kernels = None
-    # if can_use_kernels:
-    #     print("\n[4] Gram Newton-Schulz (Kernels)")
-    #     gram_kernels = GramNewtonSchulz(
-    #         ns_epsilon=1e-7,
-    #         ns_use_kernels=True,
-    #         ns_coefficients=YOU_COEFFICIENTS,
-    #         gram_newton_schulz_reset_iterations=[2],
-    #     )
-    #
-    #     _ = gram_kernels(X)
-    #     torch.cuda.synchronize()
-    #     time.sleep(1.0)
-    #
-    #     timing_gram_kernels = benchmark_ns_variant(
-    #         gram_kernels,
-    #         X,
-    #         warmup=args.warmup,
-    #         repeats=args.repeats,
-    #         desc="Gram Newton-Schulz (Kernels)",
-    #     )
-    #     torch.cuda.synchronize()
-    #     time.sleep(1.0)
+
+    timing_gram_triton = None
+    gram_triton = NewtonSchulz(
+        eps=1e-9,
+        use_gram=True,
+        coeff=YOU_COEFFICIENTS,
+        gns_reset_iters=[2],
+        use_triton=True,
+    )
+
+    _ = gram_triton(X)
+    torch.cuda.synchronize()
+    time.sleep(1.0)
+
+    timing_gram_triton = benchmark(
+        gram_triton,
+        X,
+        warmup_iter=args.warmup_iter,
+        repeat_iter=args.repeat_iter,
+    )
+    torch.cuda.synchronize()
+    time.sleep(1.0)
 
     print(f"{'Standard Newton-Schulz (PyTorch)':<50} | {timing_standard_torch:8.4f}")
-    if can_use_kernels:
-        print(
-            f"{'Standard Newton-Schulz (Kernels)':<50} | {timing_standard_kernels:8.4f}"
-        )
+    print(f"{'Standard Newton-Schulz (Triton)':<50} | {timing_standard_triton:8.4f}")
     print(f"{'Gram Newton-Schulz (PyTorch)':<50} | {timing_gram_torch:8.4f}")
-    # if can_use_kernels:
-    #     print(f"{'Gram Newton-Schulz (Kernels)':<50} | {timing_gram_kernels:12.3f}")
-    #
+    print(f"{'Gram Newton-Schulz (Kernels)':<50} | {timing_gram_triton:8.4f}")
 
     if args.profile:
         if args.profile_trace:
@@ -174,16 +166,14 @@ def main(args):
             _ = standard_torch(X)
             torch.cuda.synchronize()
 
-            # if can_use_kernels:
-            #     _ = standard_kernels(X)
-            #     torch.cuda.synchronize()
-            #
-            # _ = gram_torch(X)
-            # torch.cuda.synchronize()
-            #
-            # if can_use_kernels:
-            #     _ = gram_kernels(X)
-            #     torch.cuda.synchronize()
+            _ = standard_triton(X)
+            torch.cuda.synchronize()
+
+            _ = gram_torch(X)
+            torch.cuda.synchronize()
+
+            _ = gram_triton(X)
+            torch.cuda.synchronize()
 
         prof.export_chrome_trace(trace_filename)
         print(f"Trace saved to: {trace_filename}")
