@@ -1,4 +1,4 @@
-# Newton-Schulz for Broke People (Ampere Architecture)
+# Gram Newton-Schulz for Broke People (Ampere Architecture)
 
 
 Ampere compatible kernels for Gram-Newton-Schulz based off code from:
