@@ -9,11 +9,11 @@ dependencies = [
     "einops>=0.8.2",
     "jaxtyping>=0.3.11",
     "torch>=2.5",
-    "triton>=3.1; sys_platform == 'linux'",
 ]
 
 [project.optional-dependencies]
 cutlass = ["flashinfer-python==0.6.13; sys_platform == 'linux'"]
+triton = ["triton>=3.1; sys_platform == 'linux'"]
 
 [project.urls]
 Repository = "https://github.com/afrenkai/Gram-Newton-Schulz-Ampere"
@@ -26,10 +26,9 @@ build-backend = "setuptools.build_meta"
 [dependency-groups]
 dev = [
     "black>=26.5.1",
-    "flake8>=7.3.0",
-    "numpy>=2.4.4",
     "pytest>=9.1.1",
     "ruff>=0.16.5",
+    "triton>=3.1; sys_platform == 'linux'",
     "ty>=0.0.75",
 ]
 

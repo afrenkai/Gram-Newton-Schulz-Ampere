@@ -6,21 +6,20 @@ import torch
 from torch import Tensor
 from torch.distributed import ProcessGroup
 
-from .coefficients import POLAR_EXPRESS_COEFFICIENTS
-from .dion3_update import (
+from gram_newton_schulz_ampere.dion3_update import (
     apply_dion3_update,
     normalize_dion3_rows,
     select_dion3_rows,
 )
-from .muon import Muon
-from .muon_distributed import (
+from gram_newton_schulz_ampere.distributed_orthogonalization import (
     local_tensor,
     orthogonalize_parameter_updates,
     parameter_layout,
     resolve_gradient,
     validate_gradient_participation,
 )
-from .muon_types import (
+from gram_newton_schulz_ampere.muon import Muon
+from gram_newton_schulz_ampere.optimizer_types import (
     Coefficients,
     DistributedMesh,
     LearningRate,
@@ -53,11 +52,10 @@ class Dion3(Muon):
         epsilon: float = 1e-8,
         adjust_lr: LearningRateAdjustment = "spectral_norm",
         selection_scope: str = "local",
-        ns_algorithm: NewtonSchulzAlgorithm = "auto",
+        ns_algorithm: NewtonSchulzAlgorithm = "standard_newton_schulz",
         ns_epsilon: float = 1e-7,
-        ns_use_kernels: bool = True,
-        ns_backend: NewtonSchulzBackend = "auto",
-        ns_coefficients: Coefficients = POLAR_EXPRESS_COEFFICIENTS,
+        ns_backend: NewtonSchulzBackend = "torch",
+        ns_coefficients: Coefficients | None = None,
         gram_newton_schulz_reset_iterations: Sequence[int] = (2,),
     ) -> None:
         if mu is not None:
@@ -78,7 +76,6 @@ class Dion3(Muon):
             flatten=False,
             ns_algorithm=ns_algorithm,
             ns_epsilon=ns_epsilon,
-            ns_use_kernels=ns_use_kernels,
             ns_backend=ns_backend,
             ns_coefficients=ns_coefficients,
             gram_newton_schulz_reset_iterations=(gram_newton_schulz_reset_iterations),

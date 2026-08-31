@@ -1,3 +1,4 @@
+from collections.abc import Generator
 from copy import deepcopy
 
 import pytest
@@ -5,6 +6,14 @@ import torch
 from torch import Tensor
 
 from gram_newton_schulz_ampere import GramNewtonSchulz, Muon, StandardNewtonSchulz
+
+
+@pytest.fixture(autouse=True)
+def cuda_default_device() -> Generator[None, None, None]:
+    if not torch.cuda.is_available():
+        pytest.skip("requires CUDA")
+    with torch.device("cuda"):
+        yield
 
 
 class IdentityOrthogonalizer:
@@ -26,7 +35,6 @@ def test_muon_momentum_nesterov_and_native_state_shape() -> None:
         momentum=0.5,
         nesterov=False,
         adjust_lr=None,
-        ns_use_kernels=False,
     )
     optimizer.newton_schulz = IdentityOrthogonalizer()
 
@@ -49,7 +57,6 @@ def test_muon_momentum_nesterov_and_native_state_shape() -> None:
         momentum=0.5,
         nesterov=True,
         adjust_lr=None,
-        ns_use_kernels=False,
     )
     nesterov_optimizer.newton_schulz = IdentityOrthogonalizer()
     nesterov_parameter.grad = first_gradient.clone()
@@ -68,7 +75,6 @@ def test_conv_flatten_uses_einops_and_preserves_state_shape() -> None:
         momentum=0.0,
         nesterov=False,
         adjust_lr=None,
-        ns_use_kernels=False,
     )
     orthogonalizer = IdentityOrthogonalizer()
     optimizer.newton_schulz = orthogonalizer
@@ -85,7 +91,6 @@ def test_closure_runs_once_with_grad_and_returns_loss() -> None:
         [parameter],
         momentum=0.0,
         nesterov=False,
-        ns_use_kernels=False,
     )
     optimizer.newton_schulz = IdentityOrthogonalizer()
     grad_modes: list[bool] = []
@@ -109,7 +114,6 @@ def test_adamw_group_matches_torch_and_prepopulates_state() -> None:
         weight_decay=0.1,
         betas=(0.8, 0.9),
         epsilon=1e-6,
-        ns_use_kernels=False,
     )
     reference_optimizer = torch.optim.AdamW(
         [reference],
@@ -141,7 +145,6 @@ def test_decay_uses_base_lr_and_update_uses_adjusted_lr() -> None:
         nesterov=False,
         weight_decay=0.2,
         adjust_lr="spectral_norm",
-        ns_use_kernels=False,
     )
     optimizer.newton_schulz = IdentityOrthogonalizer()
     optimizer.step()
@@ -152,7 +155,7 @@ def test_decay_uses_base_lr_and_update_uses_adjusted_lr() -> None:
 
 
 def test_actual_gram_update_matches_direct_call() -> None:
-    generator = torch.Generator().manual_seed(67)
+    generator = torch.Generator(device="cuda").manual_seed(67)
     gradient = torch.randn(8, 4, generator=generator)
     parameter = torch.nn.Parameter(torch.zeros_like(gradient))
     parameter.grad = gradient.clone()
@@ -163,33 +166,32 @@ def test_actual_gram_update_matches_direct_call() -> None:
         nesterov=False,
         adjust_lr=None,
         ns_algorithm="gram_newton_schulz",
-        ns_use_kernels=False,
     )
     optimizer.step()
 
-    expected = -0.05 * GramNewtonSchulz(ns_use_kernels=False)(gradient)
+    expected = -0.05 * GramNewtonSchulz()(gradient)
     torch.testing.assert_close(parameter, expected)
 
 
 def test_muon_rejects_vector_sparse_and_complex_gradients() -> None:
     with pytest.raises(ValueError, match="matrix parameters"):
-        Muon([torch.nn.Parameter(torch.ones(3))], ns_use_kernels=False)
+        Muon([torch.nn.Parameter(torch.ones(3))])
 
     sparse_parameter = torch.nn.Parameter(torch.zeros(3, 3))
     sparse_parameter.grad = torch.eye(3).to_sparse()
-    sparse_optimizer = Muon([sparse_parameter], ns_use_kernels=False)
+    sparse_optimizer = Muon([sparse_parameter])
     with pytest.raises(RuntimeError, match="sparse"):
         sparse_optimizer.step()
 
     complex_parameter = torch.nn.Parameter(torch.zeros(3, 3, dtype=torch.complex64))
     complex_parameter.grad = torch.ones_like(complex_parameter)
-    complex_optimizer = Muon([complex_parameter], ns_use_kernels=False)
+    complex_optimizer = Muon([complex_parameter])
     with pytest.raises(RuntimeError, match="complex"):
         complex_optimizer.step()
 
 
 def test_state_dict_resume_scheduler_and_add_param_group() -> None:
-    generator = torch.Generator().manual_seed(71)
+    generator = torch.Generator(device="cuda").manual_seed(71)
     initial = torch.randn(4, 3, generator=generator)
     first_gradient = torch.randn(4, 3, generator=generator)
     second_gradient = torch.randn(4, 3, generator=generator)
@@ -202,7 +204,6 @@ def test_state_dict_resume_scheduler_and_add_param_group() -> None:
         momentum=0.5,
         nesterov=True,
         adjust_lr=None,
-        ns_use_kernels=False,
     )
     checkpointed_optimizer = Muon(
         [checkpointed],
@@ -210,7 +211,6 @@ def test_state_dict_resume_scheduler_and_add_param_group() -> None:
         momentum=0.5,
         nesterov=True,
         adjust_lr=None,
-        ns_use_kernels=False,
     )
     uninterrupted_optimizer.newton_schulz = IdentityOrthogonalizer()
     checkpointed_optimizer.newton_schulz = IdentityOrthogonalizer()
@@ -226,7 +226,6 @@ def test_state_dict_resume_scheduler_and_add_param_group() -> None:
         momentum=0.5,
         nesterov=True,
         adjust_lr=None,
-        ns_use_kernels=False,
     )
     resumed_optimizer.load_state_dict(deepcopy(checkpointed_optimizer.state_dict()))
     resumed_optimizer.newton_schulz = IdentityOrthogonalizer()
@@ -261,7 +260,6 @@ def test_newton_schulz_configuration_resume_and_square_fallback() -> None:
     optimizer = Muon(
         [parameter],
         ns_algorithm="standard_newton_schulz",
-        ns_use_kernels=False,
     )
     parameter.grad = torch.randn_like(parameter)
     optimizer.step()
@@ -271,7 +269,6 @@ def test_newton_schulz_configuration_resume_and_square_fallback() -> None:
     resumed = Muon(
         [resumed_parameter],
         ns_algorithm="gram_newton_schulz",
-        ns_use_kernels=False,
     )
     resumed.load_state_dict(checkpoint)
     assert resumed.ns_algorithm == "standard_newton_schulz"
@@ -283,14 +280,14 @@ def test_newton_schulz_configuration_resume_and_square_fallback() -> None:
     assert "momentum_buffer" in resumed.state[resumed_parameter]
 
     square = torch.randn(4, 4)
-    gram = GramNewtonSchulz(ns_use_kernels=False)(square)
-    standard = StandardNewtonSchulz(ns_use_kernels=False)(square)
+    gram = GramNewtonSchulz()(square)
+    standard = StandardNewtonSchulz()(square)
     torch.testing.assert_close(gram, standard, rtol=0, atol=0)
 
 
 def test_add_param_group_is_atomic_and_callable_adjustment_is_rejected() -> None:
     parameter = torch.nn.Parameter(torch.zeros(3, 2))
-    optimizer = Muon([parameter], ns_use_kernels=False)
+    optimizer = Muon([parameter])
     original_group_count = len(optimizer.param_groups)
     original_state_parameters = set(optimizer.state)
     invalid_parameter = torch.nn.Parameter(torch.zeros(3))
@@ -303,5 +300,4 @@ def test_add_param_group_is_atomic_and_callable_adjustment_is_rejected() -> None
         Muon(
             [torch.nn.Parameter(torch.zeros(2, 2))],
             adjust_lr=lambda learning_rate, matrix_shape: learning_rate,
-            ns_use_kernels=False,
         )

@@ -21,17 +21,20 @@ from gram_newton_schulz_ampere import Dion3, Muon
 
 @pytest.fixture(scope="module")
 def distributed_device_mesh() -> Generator[DeviceMesh, None, None]:
-    if "RANK" not in os.environ:
-        pytest.skip("run with torchrun")
-    distributed.init_process_group("gloo")
+    if "RANK" not in os.environ or not torch.cuda.is_available():
+        pytest.skip("run with torchrun on CUDA")
+    local_rank = int(os.environ["LOCAL_RANK"])
+    torch.cuda.set_device(local_rank)
+    distributed.init_process_group("nccl")
     world_size = distributed.get_world_size()
     device_mesh = init_device_mesh(
-        "cpu",
+        "cuda",
         (world_size,),
         mesh_dim_names=("shard",),
     )
     try:
-        yield device_mesh
+        with torch.device("cuda"):
+            yield device_mesh
     finally:
         distributed.destroy_process_group()
 
@@ -41,7 +44,7 @@ def test_distributed_muon_matches_single_rank(
 ) -> None:
     process_rank = distributed.get_rank()
     world_size = distributed.get_world_size()
-    generator = torch.Generator().manual_seed(67)
+    generator = torch.Generator(device="cuda").manual_seed(67)
     ddp_model = DistributedDataParallel(torch.nn.Linear(4, 4, bias=False))
     ddp_optimizer = Muon(
         ddp_model.parameters(),
@@ -49,7 +52,6 @@ def test_distributed_muon_matches_single_rank(
         momentum=0.0,
         nesterov=False,
         adjust_lr=None,
-        ns_use_kernels=False,
         distributed_mesh=distributed.group.WORLD,
     )
     ddp_inputs = torch.randn(3, 4, generator=generator) + process_rank
@@ -79,7 +81,6 @@ def test_distributed_muon_matches_single_rank(
         momentum=0.0,
         nesterov=False,
         adjust_lr=None,
-        ns_use_kernels=False,
         distributed_mesh=distributed.group.WORLD,
     )
     replicated_optimizer.step()
@@ -106,7 +107,6 @@ def test_distributed_muon_matches_single_rank(
             momentum=0.0,
             nesterov=False,
             adjust_lr=None,
-            ns_use_kernels=False,
         ).step()
 
         parameter = torch.nn.Parameter(
@@ -127,7 +127,6 @@ def test_distributed_muon_matches_single_rank(
             momentum=0.0,
             nesterov=False,
             adjust_lr=None,
-            ns_use_kernels=False,
             distributed_mesh=distributed_device_mesh,
         )
         optimizer.step()
@@ -155,7 +154,6 @@ def test_distributed_muon_matches_single_rank(
         sharded_parameter.grad = sharded_gradient
     mixed_optimizer = Muon(
         [regular_parameter, sharded_parameter],
-        ns_use_kernels=False,
     )
     with pytest.raises(RuntimeError, match="gradient participation"):
         mixed_optimizer.step()
@@ -169,7 +167,7 @@ def test_distributed_dion3_matches_single_rank(
 ) -> None:
     process_rank = distributed.get_rank()
     world_size = distributed.get_world_size()
-    generator = torch.Generator().manual_seed(113)
+    generator = torch.Generator(device="cuda").manual_seed(113)
     replicated_parameters = [
         torch.nn.Parameter(torch.randn(8, 4, generator=generator))
         for parameter_index in range(3)
@@ -184,7 +182,6 @@ def test_distributed_dion3_matches_single_rank(
         muon_beta2=0.9,
         weight_decay=0.0,
         adjust_lr=None,
-        ns_use_kernels=False,
         distributed_mesh=distributed.group.WORLD,
     )
     replicated_optimizer.step()
@@ -206,7 +203,6 @@ def test_distributed_dion3_matches_single_rank(
         muon_beta2=0.9,
         weight_decay=0.0,
         adjust_lr=None,
-        ns_use_kernels=False,
     ).step()
 
     parameter = torch.nn.Parameter(
@@ -225,7 +221,6 @@ def test_distributed_dion3_matches_single_rank(
         muon_beta2=0.9,
         weight_decay=0.0,
         adjust_lr=None,
-        ns_use_kernels=False,
         distributed_mesh=distributed_device_mesh,
     )
     optimizer.step()
@@ -268,7 +263,6 @@ def test_distributed_dion3_matches_single_rank(
         muon_beta2=0.9,
         weight_decay=0.0,
         adjust_lr=None,
-        ns_use_kernels=False,
         distributed_mesh=distributed_device_mesh,
     )
     checkpoint_path = Path(tempfile.gettempdir()) / (
@@ -334,7 +328,6 @@ def test_distributed_dion3_matches_single_rank(
         mixed_parameters,
         fraction=1.0,
         adjust_lr=None,
-        ns_use_kernels=False,
         distributed_mesh=distributed_device_mesh,
     )
     mixed_optimizer.step()
@@ -351,7 +344,6 @@ def test_distributed_dion3_matches_single_rank(
         batched_parameters,
         fraction=0.5,
         adjust_lr=None,
-        ns_use_kernels=False,
         distributed_mesh=distributed.group.WORLD,
     ).step()
     assert all(torch.isfinite(parameter).all() for parameter in batched_parameters)
@@ -365,7 +357,6 @@ def test_distributed_dion3_matches_single_rank(
         [batched_shard],
         fraction=0.5,
         adjust_lr=None,
-        ns_use_kernels=False,
         distributed_mesh=distributed_device_mesh,
     ).step()
     assert torch.isfinite(batched_shard.to_local()).all()
@@ -381,7 +372,6 @@ def test_distributed_dion3_matches_single_rank(
     column_optimizer = Dion3(
         [column_parameter],
         fraction=0.5,
-        ns_use_kernels=False,
         distributed_mesh=distributed_device_mesh,
     )
     with pytest.raises(NotImplementedError, match="row-sharded"):

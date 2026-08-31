@@ -5,7 +5,7 @@ from torch import Tensor, distributed
 from torch.distributed import ProcessGroup
 from torch.distributed.tensor import DeviceMesh, DTensor, Shard
 
-from .muon_types import (
+from gram_newton_schulz_ampere.optimizer_types import (
     DistributedMesh,
     Orthogonalizer,
     ParameterLayout,
@@ -266,23 +266,6 @@ def exchange_equal_chunks(
     input_chunks: Sequence[Tensor],
     process_group: ProcessGroup,
 ) -> list[Tensor]:
-    world_size = distributed.get_world_size(process_group)
-    if distributed.get_backend(process_group) == distributed.Backend.GLOO:
-        stacked_inputs = torch.stack(tuple(input_chunks))
-        gathered_inputs = [
-            torch.empty_like(stacked_inputs) for source_rank in range(world_size)
-        ]
-        distributed.all_gather(
-            gathered_inputs,
-            stacked_inputs,
-            group=process_group,
-        )
-        process_rank = distributed.get_rank(process_group)
-        return [
-            source_inputs[process_rank].contiguous()
-            for source_inputs in gathered_inputs
-        ]
-
     output_chunks = [torch.empty_like(chunk) for chunk in input_chunks]
     distributed.all_to_all(
         output_chunks,

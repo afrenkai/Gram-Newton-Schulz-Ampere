@@ -1,40 +1,48 @@
-# Gram Newton-Schulz for Ampere Architecture
-Validated on RTX 3090, RTX 3080 Ti, A100, and H100
+# Gram Newton-Schulz for Ampere
 
-Ampere compatible kernels for Gram-Newton-Schulz based off code from:
-- https://github.com/Dao-AILab/gram-newton-schulz
-
-```
-@misc{GramNewtonSchulz,
-  title   = {Gram Newton-Schulz},
-  author  = {Jack Zhang and Noah Amsel and Berlin Chen and Tri Dao},
-  year    = {2026},
-  url     = {https://dao-ailab.github.io/blog/2026/gram-newton-schulz/}
-}
-```
-More docs soon
+CUDA-only Newton-Schulz orthogonalization with production Muon and Dion3
+optimizers for PyTorch. The package supports local CUDA tensors, NCCL DDP
+process groups, and one active CUDA DTensor shard dimension.
 
 ## Installation
 
+Install the default Torch/cuBLAS backend:
+
 ```bash
-uv add "gram-newton-schulz-ampere[cutlass] @ git+https://github.com/afrenkai/Gram-Newton-Schulz-Ampere.git@ampere-muon"
+uv add "gram-newton-schulz-ampere @ git+https://github.com/afrenkai/Gram-Newton-Schulz-Ampere.git@ampere-muon"
 ```
 
-## Gram Newton-Schulz
+Install an optional GPU backend:
 
-The package exposes an API compatible with the Hopper and Blackwell implementation:
+```bash
+uv add "gram-newton-schulz-ampere[cutlass] @ git+https://github.com/afrenkai/Gram-Newton-Schulz-Ampere.git@ampere-muon"
+uv add "gram-newton-schulz-ampere[triton] @ git+https://github.com/afrenkai/Gram-Newton-Schulz-Ampere.git@ampere-muon"
+```
+
+The CUTLASS backend uses `flashinfer-python==0.6.13` to JIT-compile its SM80
+extension. Report JIT compilation separately from steady-state timing.
+
+## Orthogonalization
 
 ```python
 import torch
-from gram_newton_schulz_ampere import GramNewtonSchulz
+from gram_newton_schulz_ampere import StandardNewtonSchulz
 
-orthogonalize = GramNewtonSchulz(
-    ns_use_kernels=True,
-    gram_newton_schulz_reset_iterations=[2],
-)
+orthogonalize = StandardNewtonSchulz(ns_backend="torch")
 matrix = torch.randn((1, 128, 256), device="cuda", dtype=torch.bfloat16)
 result = orthogonalize(matrix)
 ```
+
+`StandardNewtonSchulz` is the default optimizer algorithm because it was faster
+than Gram Newton-Schulz across the measured A100 shape grid. Use
+`GramNewtonSchulz` when that algorithm is required.
+
+Available backends are:
+
+- `torch`: default Torch/cuBLAS implementation.
+- `cutlass`: FlashInfer-JIT CUTLASS implementation for aligned SM80 tensors.
+  Unsupported shapes and devices use the Torch implementation.
+- `triton`: explicit Triton implementation.
 
 ## Muon
 
@@ -46,27 +54,15 @@ weight = torch.nn.Parameter(torch.randn((128, 256), device="cuda"))
 optimizer = Muon(
     [weight],
     lr=3e-3,
-    ns_algorithm="auto",
-    ns_backend="auto",
-    ns_use_kernels=True,
+    ns_algorithm="standard_newton_schulz",
+    ns_backend="torch",
 )
 ```
 
-The Muon API is adapted from `Dao-AILab/gram-newton-schulz`. The default
-`ns_algorithm="auto"` uses standard Newton--Schulz because it was faster than
-the Gram formulation across the measured A100 shape grid. The default
-`ns_backend="auto"` uses Torch/cuBLAS because it was fastest in measured
-whole-optimizer A100 runs. `ns_backend="cutlass"` exposes the FlashInfer-JIT
-CUTLASS SM80 kernel for aligned workloads where it benchmarks faster, while
-unsupported layouts fall back to Torch. `ns_algorithm="gram_newton_schulz"`
-and `ns_backend="triton"` remain explicit choices. FlashInfer JIT cold
-compilation is separate from steady-state optimizer time.
+Muon routes matrix parameters through Newton-Schulz. AdamW or Lion parameter
+groups handle vectors and scalars.
 
 ## Dion3
-
-`Dion3` adds row selection, error-feedback momentum, and NorMuon
-per-neuron normalization to the same Ampere orthogonalization and distributed
-collective layer:
 
 ```python
 import torch
@@ -83,22 +79,36 @@ optimizer = Dion3(
     fraction=0.25,
     momentum=0.95,
     muon_beta2=0.95,
-    ns_use_kernels=True,
 )
 ```
 
-Muon supports replicated DDP parameters, one active FSDP2/DTensor matrix shard,
-and feasible one-dimensional tensor parallel layouts. Dion3 supports replicated
-parameters, batched matrices such as convolution kernels, and one active row
-shard. Multi-shard FSDP2 plus tensor parallel layouts and `Partial` DTensors are
-rejected. Dion3 currently supports `selection_scope="local"`; fractional
-row-sharded selection is therefore layout-dependent, as in Dion's local mode.
+Dion3 implements row selection, error-feedback momentum, and FP32 NorMuon
+per-neuron normalization. `selection_scope="local"` is currently supported;
+fractional row-sharded selection is therefore layout-dependent.
 
-Optimizer state is eagerly allocated and supports normal `state_dict`, learning
-rate schedulers, `add_param_group`, and PyTorch distributed-checkpoint state-dict
-conversion. Newton--Schulz settings are stored in optimizer checkpoints.
+## Distributed layouts
 
-The distributed optimizer design and Dion3 algorithm are adapted from
-[Microsoft Dion](https://github.com/microsoft/dion). The Ampere Gram
-Newton--Schulz implementation is based on
+Muon supports replicated NCCL DDP parameters and one active CUDA FSDP2/DTensor
+matrix shard. Dion3 supports replicated parameters, batched matrices, and one
+active row shard. The optimizers reject `Partial` placements, multiple active shard
+dimensions, and unsupported Dion3 column shards.
+
+Optimizer state supports `state_dict`, schedulers, `add_param_group`, and PyTorch
+distributed-checkpoint conversion. Newton-Schulz settings are included in
+optimizer checkpoints.
+
+## Attribution
+
+The Newton-Schulz implementation is based on
 [Dao-AILab/gram-newton-schulz](https://github.com/Dao-AILab/gram-newton-schulz).
+The distributed optimizer design and Dion3 algorithm are adapted from
+[Microsoft Dion](https://github.com/microsoft/dion).
+
+```bibtex
+@misc{GramNewtonSchulz,
+  title  = {Gram Newton-Schulz},
+  author = {Jack Zhang and Noah Amsel and Berlin Chen and Tri Dao},
+  year   = {2026},
+  url    = {https://dao-ailab.github.io/blog/2026/gram-newton-schulz/}
+}
+```

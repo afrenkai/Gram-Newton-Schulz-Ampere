@@ -1,4 +1,5 @@
 import copy
+from collections.abc import Generator
 
 import pytest
 import torch
@@ -10,6 +11,14 @@ from gram_newton_schulz_ampere.dion3_update import (
     normalize_dion3_rows,
     select_dion3_rows,
 )
+
+
+@pytest.fixture(autouse=True)
+def cuda_default_device() -> Generator[None, None, None]:
+    if not torch.cuda.is_available():
+        pytest.skip("requires CUDA")
+    with torch.device("cuda"):
+        yield
 
 
 class IdentityOrthogonalizer:
@@ -121,7 +130,6 @@ def test_dion3_optimizer_state_closure_and_scalar_routing() -> None:
         muon_beta2=0.9,
         weight_decay=0.0,
         adjust_lr=None,
-        ns_use_kernels=False,
     )
     optimizer.newton_schulz = IdentityOrthogonalizer()
     closure_calls = 0
@@ -157,7 +165,6 @@ def test_dion3_optimizer_state_closure_and_scalar_routing() -> None:
         muon_beta2=0.9,
         weight_decay=0.0,
         adjust_lr=None,
-        ns_use_kernels=False,
     )
     resumed.load_state_dict(saved_state)
     resumed.newton_schulz = IdentityOrthogonalizer()
@@ -177,7 +184,6 @@ def test_dion3_validation_and_add_param_group() -> None:
     optimizer = Dion3(
         [parameter],
         fraction=0.5,
-        ns_use_kernels=False,
     )
     added = torch.nn.Parameter(torch.zeros(2, 2))
     optimizer.add_param_group({"params": [added]})
@@ -189,7 +195,6 @@ def test_dion3_validation_and_add_param_group() -> None:
         [batched_matrix],
         fraction=0.5,
         adjust_lr=None,
-        ns_use_kernels=False,
     )
     batched_optimizer.newton_schulz = IdentityOrthogonalizer()
     batched_matrix.grad = torch.randn_like(batched_matrix)
@@ -203,7 +208,7 @@ def test_dion3_validation_and_add_param_group() -> None:
     assert torch.isfinite(batched_matrix).all()
 
     bfloat16_matrix = torch.nn.Parameter(torch.zeros(3, 4, dtype=torch.bfloat16))
-    bfloat16_optimizer = Dion3([bfloat16_matrix], ns_use_kernels=False)
+    bfloat16_optimizer = Dion3([bfloat16_matrix])
     assert (
         bfloat16_optimizer.state[bfloat16_matrix]["variance_neuron"].dtype
         == torch.float32
@@ -211,7 +216,7 @@ def test_dion3_validation_and_add_param_group() -> None:
 
     invalid_fraction = torch.nn.Parameter(torch.zeros(2, 2))
     try:
-        Dion3([invalid_fraction], fraction=0.0, ns_use_kernels=False)
+        Dion3([invalid_fraction], fraction=0.0)
     except ValueError as error:
         assert "fraction" in str(error)
     else:
@@ -219,7 +224,7 @@ def test_dion3_validation_and_add_param_group() -> None:
 
     invalid_shape = torch.nn.Parameter(torch.zeros(2))
     try:
-        Dion3([invalid_shape], ns_use_kernels=False)
+        Dion3([invalid_shape])
     except ValueError as error:
         assert "matrix" in str(error)
     else:
@@ -228,7 +233,7 @@ def test_dion3_validation_and_add_param_group() -> None:
 
 def test_dion3_rejected_groups_are_atomic() -> None:
     parameter = torch.nn.Parameter(torch.zeros(3, 2))
-    optimizer = Dion3([parameter], ns_use_kernels=False)
+    optimizer = Dion3([parameter])
     original_group_count = len(optimizer.param_groups)
     original_state_parameters = set(optimizer.state)
     rejected = torch.nn.Parameter(torch.zeros(2, 2))
@@ -246,5 +251,4 @@ def test_dion3_rejected_groups_are_atomic() -> None:
     with pytest.raises(ValueError, match="Muon parameter groups"):
         Dion3(
             [{"params": [rejected], "algorithm": "muon"}],
-            ns_use_kernels=False,
         )

@@ -8,7 +8,7 @@ from jaxtyping import Float, Int, jaxtyped
 from torch import Tensor, distributed
 from torch.distributed import ProcessGroup
 
-from .muon_types import LearningRate
+from gram_newton_schulz_ampere.optimizer_types import LearningRate
 
 
 @jaxtyped(typechecker=beartype)

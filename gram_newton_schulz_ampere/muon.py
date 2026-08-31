@@ -7,14 +7,20 @@ from einops import rearrange
 from torch import Tensor
 from torch.optim.optimizer import Optimizer, StateDict
 
-from .coefficients import POLAR_EXPRESS_COEFFICIENTS
-from .muon_distributed import (
+from gram_newton_schulz_ampere.coefficients import polar_express_coefficients
+from gram_newton_schulz_ampere.distributed_orthogonalization import (
+    configured_process_group,
     local_tensor,
     orthogonalize_parameter_updates,
     resolve_gradient,
     validate_gradient_participation,
 )
-from .muon_types import (
+from gram_newton_schulz_ampere.newton_schulz import (
+    GramNewtonSchulz,
+    NewtonSchulz,
+    StandardNewtonSchulz,
+)
+from gram_newton_schulz_ampere.optimizer_types import (
     Coefficients,
     DistributedMesh,
     LearningRate,
@@ -27,7 +33,6 @@ from .muon_types import (
     ParameterGroup,
     ParameterGroupInput,
 )
-from .newton_schulz import GramNewtonSchulz, NewtonSchulz, StandardNewtonSchulz
 
 
 class Muon(Optimizer):
@@ -46,11 +51,10 @@ class Muon(Optimizer):
         epsilon: float = 1e-8,
         adjust_lr: LearningRateAdjustment = "spectral_norm",
         flatten: bool = False,
-        ns_algorithm: NewtonSchulzAlgorithm = "auto",
+        ns_algorithm: NewtonSchulzAlgorithm = "standard_newton_schulz",
         ns_epsilon: float = 1e-7,
-        ns_use_kernels: bool = True,
-        ns_backend: NewtonSchulzBackend = "auto",
-        ns_coefficients: Coefficients = POLAR_EXPRESS_COEFFICIENTS,
+        ns_backend: NewtonSchulzBackend = "torch",
+        ns_coefficients: Coefficients | None = None,
         gram_newton_schulz_reset_iterations: Sequence[int] = (2,),
     ) -> None:
         self.validate_constructor_values(
@@ -67,11 +71,13 @@ class Muon(Optimizer):
         self.distributed_mesh = distributed_mesh
         self.ns_algorithm = ns_algorithm
         self.ns_epsilon = ns_epsilon
-        self.ns_use_kernels = ns_use_kernels
         self.ns_backend = ns_backend
+        coefficient_values = (
+            polar_express_coefficients() if ns_coefficients is None else ns_coefficients
+        )
         self.ns_coefficients = tuple(
             tuple(float(coefficient) for coefficient in iteration_coefficients)
-            for iteration_coefficients in ns_coefficients
+            for iteration_coefficients in coefficient_values
         )
         self.gram_newton_schulz_reset_iterations = tuple(
             gram_newton_schulz_reset_iterations
@@ -89,7 +95,6 @@ class Muon(Optimizer):
             "flatten": flatten,
             "ns_algorithm": self.ns_algorithm,
             "ns_epsilon": self.ns_epsilon,
-            "ns_use_kernels": self.ns_use_kernels,
             "ns_backend": self.ns_backend,
             "ns_coefficients": self.ns_coefficients,
             "gram_newton_schulz_reset_iterations": (
@@ -99,7 +104,7 @@ class Muon(Optimizer):
         super().__init__(params, defaults)
         for parameter_group in self.param_groups:
             self.validate_parameter_group(parameter_group)
-        self.validate_optimizer_devices()
+        self.validate_cuda_configuration()
 
         self.configure_newton_schulz()
 
@@ -108,11 +113,9 @@ class Muon(Optimizer):
         self.state_prepopulation_enabled = True
 
     def configure_newton_schulz(self) -> None:
-        use_kernels = self.ns_use_kernels and self.has_cuda_parameters()
         self.newton_schulz = self.build_newton_schulz(
             ns_algorithm=self.ns_algorithm,
             ns_epsilon=self.ns_epsilon,
-            ns_use_kernels=use_kernels,
             ns_backend=self.ns_backend,
             ns_coefficients=self.ns_coefficients,
             gram_newton_schulz_reset_iterations=(
@@ -130,10 +133,6 @@ class Muon(Optimizer):
         self.ns_epsilon = cast(
             float,
             first_group.get("ns_epsilon", self.ns_epsilon),
-        )
-        self.ns_use_kernels = cast(
-            bool,
-            first_group.get("ns_use_kernels", self.ns_use_kernels),
         )
         self.ns_backend = cast(
             NewtonSchulzBackend,
@@ -158,7 +157,6 @@ class Muon(Optimizer):
         configuration: ParameterGroup = {
             "ns_algorithm": self.ns_algorithm,
             "ns_epsilon": self.ns_epsilon,
-            "ns_use_kernels": self.ns_use_kernels,
             "ns_backend": self.ns_backend,
             "ns_coefficients": self.ns_coefficients,
             "gram_newton_schulz_reset_iterations": (
@@ -175,7 +173,7 @@ class Muon(Optimizer):
                     )
                 parameter_group[name] = value
             self.initialize_parameter_group_state(parameter_group)
-        self.validate_optimizer_devices()
+        self.validate_cuda_configuration()
         self.configure_newton_schulz()
 
     def add_param_group(self, param_group: ParameterGroupInput) -> None:
@@ -187,7 +185,7 @@ class Muon(Optimizer):
             if self.state_prepopulation_enabled:
                 added_group = self.param_groups[-1]
                 self.validate_parameter_group(added_group)
-                self.validate_optimizer_devices()
+                self.validate_cuda_configuration()
                 self.initialize_parameter_group_state(added_group)
         except (TypeError, ValueError, RuntimeError):
             if len(self.param_groups) > original_group_count:
@@ -244,12 +242,11 @@ class Muon(Optimizer):
                 f"Newton--Schulz epsilon must be positive, got {ns_epsilon}"
             )
         if ns_algorithm not in {
-            "auto",
             "gram_newton_schulz",
             "standard_newton_schulz",
         }:
             raise ValueError(f"Unknown Newton--Schulz algorithm: {ns_algorithm}")
-        if ns_backend not in {"auto", "cutlass", "triton"}:
+        if ns_backend not in {"torch", "cutlass", "triton"}:
             raise ValueError(f"Unknown Newton--Schulz kernel backend: {ns_backend}")
         if adjust_lr is not None and adjust_lr not in {
             "spectral_norm",
@@ -269,7 +266,6 @@ class Muon(Optimizer):
         newton_schulz_configuration: ParameterGroup = {
             "ns_algorithm": self.ns_algorithm,
             "ns_epsilon": self.ns_epsilon,
-            "ns_use_kernels": self.ns_use_kernels,
             "ns_backend": self.ns_backend,
             "ns_coefficients": self.ns_coefficients,
             "gram_newton_schulz_reset_iterations": (
@@ -337,34 +333,28 @@ class Muon(Optimizer):
         if not isinstance(value, float) or value < 0.0:
             raise ValueError(f"{name} must be a non-negative float, got {value}")
 
-    def validate_optimizer_devices(self) -> None:
+    def validate_cuda_configuration(self) -> None:
         devices = {
             local_tensor(parameter).device
             for parameter_group in self.param_groups
             for parameter in cast(list[Tensor], parameter_group["params"])
         }
+        if any(device.type != "cuda" for device in devices):
+            raise ValueError("Muon and Dion3 require CUDA parameters")
         if len(devices) > 1:
-            raise ValueError("One Muon optimizer cannot span multiple local devices")
-
-    def has_cuda_parameters(self) -> bool:
-        cuda_parameters = [
-            local_tensor(parameter)
-            for parameter_group in self.param_groups
-            for parameter in cast(list[Tensor], parameter_group["params"])
-            if local_tensor(parameter).is_cuda
-        ]
-        if not cuda_parameters:
-            return False
-        compute_capability = torch.cuda.get_device_capability(cuda_parameters[0].device)
-        if compute_capability[0] < 8:
-            raise RuntimeError("Ampere Muon requires CUDA compute capability 8.0+")
-        return True
+            raise ValueError("One optimizer cannot span multiple CUDA devices")
+        process_group = configured_process_group(self.distributed_mesh)
+        if (
+            process_group is not None
+            and torch.distributed.get_backend(process_group)
+            != torch.distributed.Backend.NCCL
+        ):
+            raise ValueError("Distributed Muon and Dion3 require an NCCL process group")
 
     def build_newton_schulz(
         self,
         ns_algorithm: NewtonSchulzAlgorithm,
         ns_epsilon: float,
-        ns_use_kernels: bool,
         ns_backend: NewtonSchulzBackend,
         ns_coefficients: Coefficients,
         gram_newton_schulz_reset_iterations: Sequence[int],
@@ -372,17 +362,15 @@ class Muon(Optimizer):
         if ns_algorithm == "gram_newton_schulz":
             return GramNewtonSchulz(
                 ns_epsilon=ns_epsilon,
-                ns_use_kernels=ns_use_kernels,
                 ns_backend=ns_backend,
                 ns_coefficients=ns_coefficients,
                 gram_newton_schulz_reset_iterations=(
                     gram_newton_schulz_reset_iterations
                 ),
             )
-        if ns_algorithm in {"auto", "standard_newton_schulz"}:
+        if ns_algorithm == "standard_newton_schulz":
             return StandardNewtonSchulz(
                 ns_epsilon=ns_epsilon,
-                ns_use_kernels=ns_use_kernels,
                 ns_backend=ns_backend,
                 ns_coefficients=ns_coefficients,
             )
@@ -448,13 +436,21 @@ class Muon(Optimizer):
             parameter_state = self.state[parameter]
             momentum_buffer = cast(Tensor, parameter_state["momentum_buffer"])
             local_momentum = local_tensor(momentum_buffer)
-            local_momentum.mul_(momentum).add_(
-                local_gradient.to(dtype=local_momentum.dtype)
-            )
-            if nesterov:
-                local_update = local_gradient.add(local_momentum, alpha=momentum)
+            converted_gradient = local_gradient.to(dtype=local_momentum.dtype)
+            if momentum == 0.0:
+                local_momentum.copy_(converted_gradient)
+                local_update = local_gradient
             else:
-                local_update = local_momentum
+                torch.add(
+                    converted_gradient,
+                    local_momentum,
+                    alpha=momentum,
+                    out=local_momentum,
+                )
+                if nesterov:
+                    local_update = local_gradient.add(local_momentum, alpha=momentum)
+                else:
+                    local_update = local_momentum
             global_shape = tuple(parameter.shape)
             matrix_updates.append(
                 self.reshape_for_orthogonalization(
@@ -489,7 +485,10 @@ class Muon(Optimizer):
             )
             if not isinstance(weight_decay, float) or weight_decay != 0.0:
                 local_parameter.mul_(1 - learning_rate * weight_decay)
-            local_parameter.sub_(local_update * adjusted_learning_rate)
+            if isinstance(adjusted_learning_rate, float):
+                local_parameter.add_(local_update, alpha=-adjusted_learning_rate)
+            else:
+                local_parameter.sub_(local_update * adjusted_learning_rate)
 
     def reshape_for_orthogonalization(
         self,

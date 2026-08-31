@@ -1,2 +1,0 @@
-from gram_newton_schulz_ampere.ampere_ns_interface import TORCH_BE as TORCH_BE
-from gram_newton_schulz_ampere.ampere_ns_interface import TRITON_BE as TRITON_BE
