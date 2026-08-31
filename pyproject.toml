@@ -12,6 +12,9 @@ dependencies = [
     "triton>=3.1; sys_platform == 'linux'",
 ]
 
+[project.optional-dependencies]
+cutlass = ["flashinfer-python==0.6.13; sys_platform == 'linux'"]
+
 [project.urls]
 Repository = "https://github.com/afrenkai/Gram-Newton-Schulz-Ampere"
 Issues = "https://github.com/afrenkai/Gram-Newton-Schulz-Ampere/issues"
@@ -33,6 +36,9 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["gram_newton_schulz_ampere*"]
+
+[tool.setuptools.package-data]
+gram_newton_schulz_ampere = ["kernels/*.cu"]
 
 [tool.black]
 line-length = 88

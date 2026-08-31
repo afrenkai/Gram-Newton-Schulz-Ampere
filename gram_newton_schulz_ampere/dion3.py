@@ -4,6 +4,7 @@ from typing import cast
 
 import torch
 from torch import Tensor
+from torch.distributed import ProcessGroup
 
 from .coefficients import POLAR_EXPRESS_COEFFICIENTS
 from .dion3_update import (
@@ -26,6 +27,7 @@ from .muon_types import (
     LearningRateAdjustment,
     LossClosure,
     NewtonSchulzAlgorithm,
+    NewtonSchulzBackend,
     OptimizerAlgorithm,
     OptimizerParameters,
     ParameterGroup,
@@ -51,9 +53,10 @@ class Dion3(Muon):
         epsilon: float = 1e-8,
         adjust_lr: LearningRateAdjustment = "spectral_norm",
         selection_scope: str = "local",
-        ns_algorithm: NewtonSchulzAlgorithm = "gram_newton_schulz",
+        ns_algorithm: NewtonSchulzAlgorithm = "auto",
         ns_epsilon: float = 1e-7,
         ns_use_kernels: bool = True,
+        ns_backend: NewtonSchulzBackend = "auto",
         ns_coefficients: Coefficients = POLAR_EXPRESS_COEFFICIENTS,
         gram_newton_schulz_reset_iterations: Sequence[int] = (2,),
     ) -> None:
@@ -76,6 +79,7 @@ class Dion3(Muon):
             ns_algorithm=ns_algorithm,
             ns_epsilon=ns_epsilon,
             ns_use_kernels=ns_use_kernels,
+            ns_backend=ns_backend,
             ns_coefficients=ns_coefficients,
             gram_newton_schulz_reset_iterations=(gram_newton_schulz_reset_iterations),
         )
@@ -195,6 +199,7 @@ class Dion3(Muon):
         selected_updates: list[Tensor] = []
         selected_indices: list[Tensor] = []
         selected_global_shapes: list[tuple[int, ...]] = []
+        normalization_process_groups: list[ProcessGroup | None] = []
         for parameter in parameters:
             layout = parameter_layout(parameter, self.distributed_mesh, False)
             matrix_row_dimension = parameter.ndim - 2
@@ -228,7 +233,14 @@ class Dion3(Muon):
             )
             selected_updates.append(selected_update)
             selected_indices.append(indices)
-            selected_global_shapes.append((global_selected_rows, parameter.shape[1]))
+            selected_global_shapes.append(
+                (*parameter.shape[:-2], global_selected_rows, parameter.shape[-1])
+            )
+            normalization_process_groups.append(
+                layout.process_group
+                if layout.sharded_tensor_dimension == matrix_row_dimension
+                else None
+            )
 
         orthogonalized_updates = orthogonalize_parameter_updates(
             parameters,
@@ -253,6 +265,7 @@ class Dion3(Muon):
                 selected_indices[parameter_index],
                 muon_beta2,
                 1e-8,
+                normalization_process_groups[parameter_index],
             )
             adjusted_learning_rate = self.adjusted_learning_rate(
                 learning_rate,

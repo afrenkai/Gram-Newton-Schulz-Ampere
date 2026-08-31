@@ -89,7 +89,13 @@ def test_distributed_muon_matches_single_rank(
         for candidate in gathered[1:]:
             torch.testing.assert_close(candidate, gathered[0], rtol=0, atol=0)
 
-    for shard_dimension, shape in ((0, (5, 4)), (1, (4, 5)), (0, (1, 5))):
+    for shard_dimension, shape in (
+        (0, (5, 4)),
+        (1, (4, 5)),
+        (0, (1, 5)),
+        (0, (5, 6)),
+        (1, (6, 5)),
+    ):
         full_parameter = torch.randn(shape, generator=generator)
         full_gradient = torch.randn(shape, generator=generator)
         reference = torch.nn.Parameter(full_parameter.clone())

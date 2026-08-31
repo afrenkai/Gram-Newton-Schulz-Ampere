@@ -5,7 +5,8 @@ import torch
 from beartype import beartype
 from einops import repeat
 from jaxtyping import Float, Int, jaxtyped
-from torch import Tensor
+from torch import Tensor, distributed
+from torch.distributed import ProcessGroup
 
 from .muon_types import LearningRate
 
@@ -35,6 +36,15 @@ def select_dion3_rows(
     if requested_count is None:
         requested_count = max(1, ceil(fraction * row_count))
     selected_count = min(requested_count, row_count)
+    if selected_count == row_count:
+        indices = torch.arange(row_count, device=momentum_buffer.device).expand(
+            *momentum_buffer.shape[:-2],
+            row_count,
+        )
+        selected_rows = momentum_buffer.clone()
+        momentum_buffer.mul_(error_feedback_decay)
+        return selected_rows.to(dtype=torch.bfloat16), indices
+
     row_norms = momentum_buffer.norm(p=1, dim=-1)
     indices = torch.topk(
         row_norms,
@@ -67,6 +77,7 @@ def normalize_dion3_rows(
     indices: Int[Tensor, "*indices"],
     muon_beta2: float,
     epsilon: float,
+    process_group: ProcessGroup | None = None,
 ) -> Float[Tensor, "*batch selected columns"]:
     variance_indices = repeat(
         indices,
@@ -79,7 +90,14 @@ def normalize_dion3_rows(
         index=variance_indices,
     ).float()
     update = selected_update.to(dtype=torch.float32)
-    original_norm = update.norm(p=2, dim=(-2, -1), keepdim=True)
+    original_squared_norm = update.square().sum(dim=(-2, -1), keepdim=True)
+    if process_group is not None:
+        distributed.all_reduce(
+            original_squared_norm,
+            op=distributed.ReduceOp.SUM,
+            group=process_group,
+        )
+    original_norm = original_squared_norm.sqrt()
     neuron_variance = update.square().mean(dim=-1, keepdim=True)
     updated_variance = torch.lerp(
         selected_variance,
@@ -87,11 +105,17 @@ def normalize_dion3_rows(
         1 - muon_beta2,
     )
     normalized_update = update / (updated_variance.sqrt() + epsilon)
-    normalized_norm = normalized_update.norm(
-        p=2,
+    normalized_squared_norm = normalized_update.square().sum(
         dim=(-2, -1),
         keepdim=True,
-    ).clamp(min=epsilon)
+    )
+    if process_group is not None:
+        distributed.all_reduce(
+            normalized_squared_norm,
+            op=distributed.ReduceOp.SUM,
+            group=process_group,
+        )
+    normalized_norm = normalized_squared_norm.sqrt().clamp(min=epsilon)
     normalized_update.mul_(original_norm / normalized_norm)
     variance_neuron.scatter_(
         -2,
@@ -110,7 +134,8 @@ def apply_dion3_update(
     weight_decay: LearningRate,
     adjusted_learning_rate: LearningRate,
 ) -> None:
-    parameter.mul_(1 - learning_rate * weight_decay)
+    if not isinstance(weight_decay, float) or weight_decay != 0.0:
+        parameter.mul_(1 - learning_rate * weight_decay)
     expanded_indices = repeat(
         indices,
         "... selected -> ... selected columns",

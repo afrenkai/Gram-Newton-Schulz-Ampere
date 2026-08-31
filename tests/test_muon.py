@@ -162,6 +162,7 @@ def test_actual_gram_update_matches_direct_call() -> None:
         momentum=0.0,
         nesterov=False,
         adjust_lr=None,
+        ns_algorithm="gram_newton_schulz",
         ns_use_kernels=False,
     )
     optimizer.step()

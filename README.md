@@ -17,7 +17,7 @@ More docs soon
 ## Installation
 
 ```bash
-uv add "gram-newton-schulz-ampere @ git+https://github.com/afrenkai/Gram-Newton-Schulz-Ampere.git@ampere-muon"
+uv add "gram-newton-schulz-ampere[cutlass] @ git+https://github.com/afrenkai/Gram-Newton-Schulz-Ampere.git@ampere-muon"
 ```
 
 ## Gram Newton-Schulz
@@ -46,15 +46,21 @@ weight = torch.nn.Parameter(torch.randn((128, 256), device="cuda"))
 optimizer = Muon(
     [weight],
     lr=3e-3,
-    ns_algorithm="gram_newton_schulz",
+    ns_algorithm="auto",
+    ns_backend="auto",
     ns_use_kernels=True,
 )
 ```
 
-The Muon API is adapted from `Dao-AILab/gram-newton-schulz`. On Ampere,
-orthogonalization is routed through the Triton kernels in this repository.
-The public API is kept independent of the kernel backend so Triton can later be
-replaced by CUTLASS or raw CUDA.
+The Muon API is adapted from `Dao-AILab/gram-newton-schulz`. The default
+`ns_algorithm="auto"` uses standard Newton--Schulz because it was faster than
+the Gram formulation across the measured A100 shape grid. The default
+`ns_backend="auto"` uses Torch/cuBLAS because it was fastest in measured
+whole-optimizer A100 runs. `ns_backend="cutlass"` exposes the FlashInfer-JIT
+CUTLASS SM80 kernel for aligned workloads where it benchmarks faster, while
+unsupported layouts fall back to Torch. `ns_algorithm="gram_newton_schulz"`
+and `ns_backend="triton"` remain explicit choices. FlashInfer JIT cold
+compilation is separate from steady-state optimizer time.
 
 ## Dion3
 

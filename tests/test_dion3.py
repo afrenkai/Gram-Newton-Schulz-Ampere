@@ -95,6 +95,17 @@ def test_dion3_update_primitives() -> None:
     assert torch.isfinite(batched_parameter).all()
     assert batched_variance.count_nonzero() == 4
 
+    full_momentum = torch.zeros(2, 4, 2)
+    full_selected, full_indices = select_dion3_rows(
+        full_momentum,
+        batched_gradient,
+        fraction=1.0,
+        error_feedback_decay=0.5,
+    )
+    assert torch.equal(full_indices, torch.arange(4).expand(2, 4))
+    assert torch.equal(full_momentum, batched_gradient * 0.5)
+    torch.testing.assert_close(full_selected.float(), batched_gradient)
+
 
 def test_dion3_optimizer_state_closure_and_scalar_routing() -> None:
     matrix = torch.nn.Parameter(torch.zeros(4, 2))
@@ -190,6 +201,13 @@ def test_dion3_validation_and_add_param_group() -> None:
         1,
     )
     assert torch.isfinite(batched_matrix).all()
+
+    bfloat16_matrix = torch.nn.Parameter(torch.zeros(3, 4, dtype=torch.bfloat16))
+    bfloat16_optimizer = Dion3([bfloat16_matrix], ns_use_kernels=False)
+    assert (
+        bfloat16_optimizer.state[bfloat16_matrix]["variance_neuron"].dtype
+        == torch.float32
+    )
 
     invalid_fraction = torch.nn.Parameter(torch.zeros(2, 2))
     try:

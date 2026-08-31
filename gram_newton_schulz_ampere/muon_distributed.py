@@ -262,6 +262,36 @@ def orthogonalize_replicated_matrices(
     return [gathered_outputs[matrix_index] for matrix_index in range(matrix_count)]
 
 
+def exchange_equal_chunks(
+    input_chunks: Sequence[Tensor],
+    process_group: ProcessGroup,
+) -> list[Tensor]:
+    world_size = distributed.get_world_size(process_group)
+    if distributed.get_backend(process_group) == distributed.Backend.GLOO:
+        stacked_inputs = torch.stack(tuple(input_chunks))
+        gathered_inputs = [
+            torch.empty_like(stacked_inputs) for source_rank in range(world_size)
+        ]
+        distributed.all_gather(
+            gathered_inputs,
+            stacked_inputs,
+            group=process_group,
+        )
+        process_rank = distributed.get_rank(process_group)
+        return [
+            source_inputs[process_rank].contiguous()
+            for source_inputs in gathered_inputs
+        ]
+
+    output_chunks = [torch.empty_like(chunk) for chunk in input_chunks]
+    distributed.all_to_all(
+        output_chunks,
+        list(input_chunks),
+        group=process_group,
+    )
+    return output_chunks
+
+
 def orthogonalize_sharded_matrices(
     matrices: Sequence[Tensor],
     global_matrix_shape: tuple[int, ...],
@@ -303,14 +333,20 @@ def orthogonalize_sharded_matrices(
         .unflatten(0, (world_size, matrices_per_rank))
         .unbind(0)
     )
-    assembled_chunks = [torch.empty_like(chunk) for chunk in input_chunks]
-    distributed.all_to_all(
-        assembled_chunks,
-        input_chunks,
-        group=process_group,
+    assembled_chunks = exchange_equal_chunks(input_chunks, process_group)
+    full_matrices = torch.cat(assembled_chunks, dim=communication_dimension).narrow(
+        communication_dimension,
+        0,
+        global_communication_size,
     )
-    full_matrices = torch.cat(assembled_chunks, dim=communication_dimension)
     full_outputs = orthogonalizer(full_matrices)
+    padded_global_size = padded_local_size * world_size
+    if global_communication_size < padded_global_size:
+        full_outputs = pad_matrix_dimension(
+            full_outputs,
+            communication_dimension,
+            padded_global_size,
+        )
 
     split_chunks = [
         chunk.contiguous()
@@ -320,12 +356,7 @@ def orthogonalize_sharded_matrices(
             dim=communication_dimension,
         )
     ]
-    returned_chunks = [torch.empty_like(chunk) for chunk in split_chunks]
-    distributed.all_to_all(
-        returned_chunks,
-        split_chunks,
-        group=process_group,
-    )
+    returned_chunks = exchange_equal_chunks(split_chunks, process_group)
     returned_outputs = (
         torch.stack(returned_chunks)
         .narrow(communication_dimension, 0, original_local_size)

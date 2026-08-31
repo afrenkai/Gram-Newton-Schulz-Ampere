@@ -7,7 +7,6 @@ from einops import rearrange
 from torch import Tensor
 from torch.optim.optimizer import Optimizer, StateDict
 
-from .ampere_ns_interface import TRITON_BE
 from .coefficients import POLAR_EXPRESS_COEFFICIENTS
 from .muon_distributed import (
     local_tensor,
@@ -22,6 +21,7 @@ from .muon_types import (
     LearningRateAdjustment,
     LossClosure,
     NewtonSchulzAlgorithm,
+    NewtonSchulzBackend,
     OptimizerAlgorithm,
     OptimizerParameters,
     ParameterGroup,
@@ -46,9 +46,10 @@ class Muon(Optimizer):
         epsilon: float = 1e-8,
         adjust_lr: LearningRateAdjustment = "spectral_norm",
         flatten: bool = False,
-        ns_algorithm: NewtonSchulzAlgorithm = "gram_newton_schulz",
+        ns_algorithm: NewtonSchulzAlgorithm = "auto",
         ns_epsilon: float = 1e-7,
         ns_use_kernels: bool = True,
+        ns_backend: NewtonSchulzBackend = "auto",
         ns_coefficients: Coefficients = POLAR_EXPRESS_COEFFICIENTS,
         gram_newton_schulz_reset_iterations: Sequence[int] = (2,),
     ) -> None:
@@ -60,12 +61,14 @@ class Muon(Optimizer):
             epsilon=epsilon,
             ns_epsilon=ns_epsilon,
             ns_algorithm=ns_algorithm,
+            ns_backend=ns_backend,
             adjust_lr=adjust_lr,
         )
         self.distributed_mesh = distributed_mesh
         self.ns_algorithm = ns_algorithm
         self.ns_epsilon = ns_epsilon
         self.ns_use_kernels = ns_use_kernels
+        self.ns_backend = ns_backend
         self.ns_coefficients = tuple(
             tuple(float(coefficient) for coefficient in iteration_coefficients)
             for iteration_coefficients in ns_coefficients
@@ -87,6 +90,7 @@ class Muon(Optimizer):
             "ns_algorithm": self.ns_algorithm,
             "ns_epsilon": self.ns_epsilon,
             "ns_use_kernels": self.ns_use_kernels,
+            "ns_backend": self.ns_backend,
             "ns_coefficients": self.ns_coefficients,
             "gram_newton_schulz_reset_iterations": (
                 self.gram_newton_schulz_reset_iterations
@@ -105,12 +109,11 @@ class Muon(Optimizer):
 
     def configure_newton_schulz(self) -> None:
         use_kernels = self.ns_use_kernels and self.has_cuda_parameters()
-        if use_kernels and TRITON_BE is None:
-            raise RuntimeError("ns_use_kernels=True requires the Ampere Triton backend")
         self.newton_schulz = self.build_newton_schulz(
             ns_algorithm=self.ns_algorithm,
             ns_epsilon=self.ns_epsilon,
             ns_use_kernels=use_kernels,
+            ns_backend=self.ns_backend,
             ns_coefficients=self.ns_coefficients,
             gram_newton_schulz_reset_iterations=(
                 self.gram_newton_schulz_reset_iterations
@@ -132,6 +135,10 @@ class Muon(Optimizer):
             bool,
             first_group.get("ns_use_kernels", self.ns_use_kernels),
         )
+        self.ns_backend = cast(
+            NewtonSchulzBackend,
+            first_group.get("ns_backend", self.ns_backend),
+        )
         loaded_coefficients = cast(
             Coefficients,
             first_group.get("ns_coefficients", self.ns_coefficients),
@@ -152,6 +159,7 @@ class Muon(Optimizer):
             "ns_algorithm": self.ns_algorithm,
             "ns_epsilon": self.ns_epsilon,
             "ns_use_kernels": self.ns_use_kernels,
+            "ns_backend": self.ns_backend,
             "ns_coefficients": self.ns_coefficients,
             "gram_newton_schulz_reset_iterations": (
                 self.gram_newton_schulz_reset_iterations
@@ -218,6 +226,7 @@ class Muon(Optimizer):
         epsilon: float,
         ns_epsilon: float,
         ns_algorithm: NewtonSchulzAlgorithm,
+        ns_backend: NewtonSchulzBackend,
         adjust_lr: LearningRateAdjustment,
     ) -> None:
         if lr < 0.0:
@@ -235,10 +244,13 @@ class Muon(Optimizer):
                 f"Newton--Schulz epsilon must be positive, got {ns_epsilon}"
             )
         if ns_algorithm not in {
+            "auto",
             "gram_newton_schulz",
             "standard_newton_schulz",
         }:
             raise ValueError(f"Unknown Newton--Schulz algorithm: {ns_algorithm}")
+        if ns_backend not in {"auto", "cutlass", "triton"}:
+            raise ValueError(f"Unknown Newton--Schulz kernel backend: {ns_backend}")
         if adjust_lr is not None and adjust_lr not in {
             "spectral_norm",
             "rms_norm",
@@ -258,6 +270,7 @@ class Muon(Optimizer):
             "ns_algorithm": self.ns_algorithm,
             "ns_epsilon": self.ns_epsilon,
             "ns_use_kernels": self.ns_use_kernels,
+            "ns_backend": self.ns_backend,
             "ns_coefficients": self.ns_coefficients,
             "gram_newton_schulz_reset_iterations": (
                 self.gram_newton_schulz_reset_iterations
@@ -352,6 +365,7 @@ class Muon(Optimizer):
         ns_algorithm: NewtonSchulzAlgorithm,
         ns_epsilon: float,
         ns_use_kernels: bool,
+        ns_backend: NewtonSchulzBackend,
         ns_coefficients: Coefficients,
         gram_newton_schulz_reset_iterations: Sequence[int],
     ) -> NewtonSchulz:
@@ -359,16 +373,20 @@ class Muon(Optimizer):
             return GramNewtonSchulz(
                 ns_epsilon=ns_epsilon,
                 ns_use_kernels=ns_use_kernels,
+                ns_backend=ns_backend,
                 ns_coefficients=ns_coefficients,
                 gram_newton_schulz_reset_iterations=(
                     gram_newton_schulz_reset_iterations
                 ),
             )
-        return StandardNewtonSchulz(
-            ns_epsilon=ns_epsilon,
-            ns_use_kernels=ns_use_kernels,
-            ns_coefficients=ns_coefficients,
-        )
+        if ns_algorithm in {"auto", "standard_newton_schulz"}:
+            return StandardNewtonSchulz(
+                ns_epsilon=ns_epsilon,
+                ns_use_kernels=ns_use_kernels,
+                ns_backend=ns_backend,
+                ns_coefficients=ns_coefficients,
+            )
+        raise ValueError(f"Unknown Newton--Schulz algorithm: {ns_algorithm}")
 
     def initialize_parameter_group_state(
         self,
@@ -383,10 +401,16 @@ class Muon(Optimizer):
                 and "momentum_buffer" not in parameter_state
             ):
                 parameter_state["momentum_buffer"] = torch.zeros_like(parameter)
-            if algorithm == "dion3" and "variance_neuron" not in parameter_state:
-                parameter_state["variance_neuron"] = torch.zeros_like(
-                    parameter[..., :1]
-                )
+            if algorithm == "dion3":
+                if "variance_neuron" not in parameter_state:
+                    parameter_state["variance_neuron"] = torch.zeros_like(
+                        parameter[..., :1],
+                        dtype=torch.float32,
+                    )
+                else:
+                    variance_neuron = cast(Tensor, parameter_state["variance_neuron"])
+                    if variance_neuron.dtype != torch.float32:
+                        parameter_state["variance_neuron"] = variance_neuron.float()
             elif algorithm == "adamw":
                 if "step" not in parameter_state:
                     parameter_state["step"] = torch.zeros(
@@ -463,7 +487,8 @@ class Muon(Optimizer):
             local_update = orthogonalized_updates[parameter_index].reshape(
                 local_parameter.shape
             )
-            local_parameter.mul_(1 - learning_rate * weight_decay)
+            if not isinstance(weight_decay, float) or weight_decay != 0.0:
+                local_parameter.mul_(1 - learning_rate * weight_decay)
             local_parameter.sub_(local_update * adjusted_learning_rate)
 
     def reshape_for_orthogonalization(
@@ -533,7 +558,8 @@ class Muon(Optimizer):
                 gradient,
                 value=1 - betas[1],
             )
-            local_parameter.mul_(1 - learning_rate * weight_decay)
+            if not isinstance(weight_decay, float) or weight_decay != 0.0:
+                local_parameter.mul_(1 - learning_rate * weight_decay)
             bias_correction_one = 1 - betas[0] ** step
             bias_correction_two = 1 - betas[1] ** step
             denominator = (
@@ -567,7 +593,8 @@ class Muon(Optimizer):
                 gradient,
                 alpha=1 - betas[0],
             )
-            local_parameter.mul_(1 - learning_rate * weight_decay)
+            if not isinstance(weight_decay, float) or weight_decay != 0.0:
+                local_parameter.mul_(1 - learning_rate * weight_decay)
             local_parameter.sub_(
                 update.sign().mul(learning_rate).to(dtype=local_parameter.dtype)
             )
