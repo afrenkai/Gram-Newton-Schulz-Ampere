@@ -12,17 +12,17 @@ Currently supported are local CUDA tenrors, DDP NCCL process groups, and 1 DTens
 The Torch/cuBLAS backend can be installed using git (until I add it to pypi)
 
 ```bash
-uv add "gram-newton-schulz-ampere @ git+https://github.com/afrenkai/Gram-Newton-Schulz-Ampere.git"
+uv add "gram-newton-schulz-ampere @ git+https://github.com/afrenkai/Gram-Newton-Schulz-Ampere.git@main"
 ```
 
 If you want a (faster) GPU backend, you can install them as follows:
 
 ```bash
-uv add "gram-newton-schulz-ampere[cutlass] @ git+https://github.com/afrenkai/Gram-Newton-Schulz-Ampere.git"
-uv add "gram-newton-schulz-ampere[triton] @ git+https://github.com/afrenkai/Gram-Newton-Schulz-Ampere.git"
+uv add "gram-newton-schulz-ampere[cutlass] @ git+https://github.com/afrenkai/Gram-Newton-Schulz-Ampere.git@main"
+uv add "gram-newton-schulz-ampere[triton] @ git+https://github.com/afrenkai/Gram-Newton-Schulz-Ampere.git@main"
 ```
 
-Note on the CUTLASS backend. For JIT compilation, we use `flashinfer-pyton`, for which the current version is `0.6.13`
+Note on the CUTLASS backend. For JIT compilation, we use `flashinfer-python`, for which the current version is `0.6.13`
 
 ## Example Usage (Orthogonalization, no Optimizer)
 
