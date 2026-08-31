@@ -1,18 +1,27 @@
 [project]
-name = "newton-schultz-broke"
+name = "gram-newton-schulz-ampere"
 version = "0.1.0"
-description = "Add your description here"
+description = "Ampere-compatible Triton kernels for Gram Newton-Schulz"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
+    "torch",
+    "triton; sys_platform == 'linux'",
+]
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[dependency-groups]
+dev = [
     "flake8>=7.3.0",
     "numpy>=2.4.4",
 ]
 
-[[tool.uv.index]]
-name = "pytorch-cu129"
-url = "https://download.pytorch.org/whl/cu129"
-explicit = true
+[tool.setuptools]
+py-modules = ["newton_schulz", "triton_ns"]
 
-[tool.uv.sources]
-torch = { index = "pytorch-cu129" }
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["gram_newton_schulz_ampere*"]

@@ -1,5 +1,7 @@
 from types import SimpleNamespace
+
 import torch
+
 import triton_ns as triton_kernels
 
 # https://arxiv.org/pdf/2505.16932
@@ -43,8 +45,8 @@ class NewtonSchulz:
         use_gram: bool = False,
         use_triton: bool = False,
         gns_reset_iters: list[int] | None = None,
-        compile_kwargs: dict = {"fullgraph": True, "mode": "reduce-overhead"},
-    ):
+        compile_kwargs: dict[str, bool | str] | None = None,
+    ) -> None:
         self.eps = eps
         self.coeff = coeff if coeff is not None else POLAR_EXPRESS_COEFFICIENTS
         self.ops = _TRITON_BE if use_triton else _TORCH_BE
@@ -103,28 +105,32 @@ class NewtonSchulz:
             .contiguous()
         )
         Q = None
-        for i, (a, b, c) in enumerate(self.coeff):
-            if self.gns_reset_iters:
-                if i != 0 and i in self.gns_reset_iters:
-                    X = self.ops.matmul(Q, X)
-                    R = self.ops.symmetric_matmul(X, X.mT)
-                    Q = None
-                Z = self.ops.symmetric_batch_matrix_matrix_product(
-                    R, R, C=R, alpha=c, beta=b
-                )
-                if i == 0 or i in self.gns_reset_iters:
-                    Q = Z + a * I
-                else:
-                    Q = self.ops.symmetric_batch_matrix_matrix_product(
-                        Q, Z, C=Q, beta=a
+        reset_iterations = self.gns_reset_iters or []
+        for iteration, (a, b, c) in enumerate(self.coeff):
+            if iteration != 0 and iteration in reset_iterations:
+                if Q is None:
+                    raise RuntimeError(
+                        "Gram Newton-Schulz reset has no accumulated update"
                     )
-                if i < len(self.coeff) - 1 and i + 1 not in self.gns_reset_iters:
-                    RZ = self.ops.symmetric_batch_matrix_matrix_product(
-                        R, Z, C=R, beta=a
-                    )
-                    R = self.ops.symmetric_batch_matrix_matrix_product(
-                        Z, RZ, C=RZ, beta=a
-                    )
+                X = self.ops.matmul(Q, X)
+                R = self.ops.symmetric_matmul(X, X.mT)
+                Q = None
+
+            Z = self.ops.symmetric_batch_matrix_matrix_product(
+                R, R, C=R, alpha=c, beta=b
+            )
+            if Q is None:
+                Q = Z + a * I
+            else:
+                Q = self.ops.symmetric_batch_matrix_matrix_product(Q, Z, C=Q, beta=a)
+            if (
+                iteration < len(self.coeff) - 1
+                and iteration + 1 not in reset_iterations
+            ):
+                RZ = self.ops.symmetric_batch_matrix_matrix_product(R, Z, C=R, beta=a)
+                R = self.ops.symmetric_batch_matrix_matrix_product(Z, RZ, C=RZ, beta=a)
+        if Q is None:
+            raise RuntimeError("Gram Newton-Schulz requires at least one coefficient")
         X = self.ops.matmul(Q, X)
 
         return X

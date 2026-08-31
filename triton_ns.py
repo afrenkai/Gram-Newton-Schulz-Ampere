@@ -38,6 +38,8 @@ import triton.language as tl
     ],
     key=["M", "N", "K"],
 )
+
+
 @triton.jit
 def baddbmm_kernel(
     C_ptr,
@@ -70,13 +72,19 @@ def baddbmm_kernel(
     batch_id = tl.program_id(axis=1)
 
     num_pid_m = tl.cdiv(M, BLOCK_SIZE_M)
-    num_pid_n = tl.cdiv(N, BLOCK_SIZE_N)  # unreachable btw
+    num_pid_n = tl.cdiv(N, BLOCK_SIZE_N)
     num_pid_in_group = GROUP_SIZE_M * num_pid_n
+
+
     group_id = pid // num_pid_in_group
     first_pid_m = group_id * GROUP_SIZE_M
     group_size_m = min(num_pid_m - first_pid_m, GROUP_SIZE_M)
-    pid_m = first_pid_m + (pid % group_size_m)
+
+
+    pid_m = first_pid_m + (pid % group_size_m) #TODO: add assert ensuring that this mod doesn't lead to issues
+
     pid_n = (pid % num_pid_in_group) // group_size_m
+
     offs_am = (pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)) % M
     offs_bn = (pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)) % N
     offs_k = tl.arange(0, BLOCK_SIZE_K)
@@ -92,12 +100,12 @@ def baddbmm_kernel(
         + (offs_k[:, None] * stride_bk + offs_bn[None, :] * stride_bn)
     )
 
-    accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
+    accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32) #not sure if ampere supports tl.float16 but maybe support in future?
 
     for k in range(0, tl.cdiv(K, BLOCK_SIZE_K)):
         a = tl.load(
             A_ptrs, mask=offs_k[None, :] < K - k * BLOCK_SIZE_K, other=0.0
-        )  # unreachable btw
+        )
         b = tl.load(B_ptrs, mask=offs_k[:, None] < K - k * BLOCK_SIZE_K, other=0.0)
         accumulator += tl.dot(a, b)
         A_ptrs += BLOCK_SIZE_K * stride_ak
@@ -142,6 +150,7 @@ def triton_baddbmm(C, A, B, alpha=1.0, beta=1.0):
         batch,
     )
 
+    #most linters wont recognize since this is a fp due to lack of defn of baddbmm
     baddbmm_kernel[grid](
         C,
         A,
