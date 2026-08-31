@@ -3,7 +3,7 @@ import torch
 
 pytest.importorskip("triton")
 
-from kernels.triton_ns import triton_baddbmm
+from gram_newton_schulz_ampere.kernels.triton_ns import triton_baddbmm
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
