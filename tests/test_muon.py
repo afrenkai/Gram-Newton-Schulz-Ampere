@@ -165,8 +165,8 @@ def test_actual_gram_update_matches_direct_call() -> None:
         momentum=0.0,
         nesterov=False,
         adjust_lr=None,
-        ns_algorithm="gram_newton_schulz",
     )
+    assert isinstance(optimizer.newton_schulz, GramNewtonSchulz)
     optimizer.step()
 
     expected = -0.05 * GramNewtonSchulz()(gradient)
@@ -253,6 +253,21 @@ def test_state_dict_resume_scheduler_and_add_param_group() -> None:
         "exp_avg",
         "exp_avg_sq",
     }
+
+
+def test_compiled_gram_matches_eager_tall_matrix() -> None:
+    generator = torch.Generator(device="cuda").manual_seed(131)
+    matrix = torch.randn(
+        (2, 256, 64),
+        device="cuda",
+        dtype=torch.bfloat16,
+        generator=generator,
+    )
+    expected = GramNewtonSchulz(ns_compile=False)(matrix)
+    compiled = GramNewtonSchulz(ns_compile=True)
+    actual = compiled(matrix)
+    assert torch.equal(actual, expected)
+    assert torch.equal(actual, compiled(matrix))
 
 
 def test_newton_schulz_configuration_resume_and_square_fallback() -> None:

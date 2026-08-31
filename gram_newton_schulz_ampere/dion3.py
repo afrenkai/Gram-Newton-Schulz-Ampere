@@ -56,11 +56,12 @@ class Dion3(Muon):
         epsilon: float = 1e-8,
         adjust_lr: LearningRateAdjustment = "spectral_norm",
         selection_scope: str = "local",
-        ns_algorithm: NewtonSchulzAlgorithm = "standard_newton_schulz",
+        ns_algorithm: NewtonSchulzAlgorithm = "gram_newton_schulz",
         ns_epsilon: float = 1e-7,
         ns_backend: NewtonSchulzBackend = "torch",
         ns_coefficients: Coefficients | None = None,
         gram_newton_schulz_reset_iterations: Sequence[int] = (2,),
+        ns_compile: bool = True,
     ) -> None:
         if mu is not None:
             if momentum != 0.95 and momentum != mu:
@@ -83,6 +84,7 @@ class Dion3(Muon):
             ns_backend=ns_backend,
             ns_coefficients=ns_coefficients,
             gram_newton_schulz_reset_iterations=(gram_newton_schulz_reset_iterations),
+            ns_compile=ns_compile,
         )
         self.defaults["algorithm"] = "dion3"
         self.defaults["fraction"] = fraction

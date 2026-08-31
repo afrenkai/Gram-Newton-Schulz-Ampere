@@ -51,11 +51,12 @@ class Muon(Optimizer):
         epsilon: float = 1e-8,
         adjust_lr: LearningRateAdjustment = "spectral_norm",
         flatten: bool = False,
-        ns_algorithm: NewtonSchulzAlgorithm = "standard_newton_schulz",
+        ns_algorithm: NewtonSchulzAlgorithm = "gram_newton_schulz",
         ns_epsilon: float = 1e-7,
         ns_backend: NewtonSchulzBackend = "torch",
         ns_coefficients: Coefficients | None = None,
         gram_newton_schulz_reset_iterations: Sequence[int] = (2,),
+        ns_compile: bool = True,
     ) -> None:
         self.validate_constructor_values(
             lr=lr,
@@ -82,6 +83,7 @@ class Muon(Optimizer):
         self.gram_newton_schulz_reset_iterations = tuple(
             gram_newton_schulz_reset_iterations
         )
+        self.ns_compile = ns_compile
         self.state_prepopulation_enabled = False
         defaults: ParameterGroup = {
             "lr": lr,
@@ -121,6 +123,7 @@ class Muon(Optimizer):
             gram_newton_schulz_reset_iterations=(
                 self.gram_newton_schulz_reset_iterations
             ),
+            ns_compile=self.ns_compile,
         )
 
     def load_state_dict(self, state_dict: StateDict) -> None:
@@ -358,6 +361,7 @@ class Muon(Optimizer):
         ns_backend: NewtonSchulzBackend,
         ns_coefficients: Coefficients,
         gram_newton_schulz_reset_iterations: Sequence[int],
+        ns_compile: bool,
     ) -> NewtonSchulz:
         if ns_algorithm == "gram_newton_schulz":
             return GramNewtonSchulz(
@@ -367,12 +371,14 @@ class Muon(Optimizer):
                 gram_newton_schulz_reset_iterations=(
                     gram_newton_schulz_reset_iterations
                 ),
+                ns_compile=ns_compile,
             )
         if ns_algorithm == "standard_newton_schulz":
             return StandardNewtonSchulz(
                 ns_epsilon=ns_epsilon,
                 ns_backend=ns_backend,
                 ns_coefficients=ns_coefficients,
+                ns_compile=ns_compile,
             )
         raise ValueError(f"Unknown Newton--Schulz algorithm: {ns_algorithm}")
 

@@ -9,14 +9,14 @@ process groups, and one active CUDA DTensor shard dimension.
 Install the default Torch/cuBLAS backend:
 
 ```bash
-uv add "gram-newton-schulz-ampere @ git+https://github.com/afrenkai/Gram-Newton-Schulz-Ampere.git@ampere-muon"
+uv add "gram-newton-schulz-ampere @ git+https://github.com/afrenkai/Gram-Newton-Schulz-Ampere.git@ampere-performance"
 ```
 
 Install an optional GPU backend:
 
 ```bash
-uv add "gram-newton-schulz-ampere[cutlass] @ git+https://github.com/afrenkai/Gram-Newton-Schulz-Ampere.git@ampere-muon"
-uv add "gram-newton-schulz-ampere[triton] @ git+https://github.com/afrenkai/Gram-Newton-Schulz-Ampere.git@ampere-muon"
+uv add "gram-newton-schulz-ampere[cutlass] @ git+https://github.com/afrenkai/Gram-Newton-Schulz-Ampere.git@ampere-performance"
+uv add "gram-newton-schulz-ampere[triton] @ git+https://github.com/afrenkai/Gram-Newton-Schulz-Ampere.git@ampere-performance"
 ```
 
 The CUTLASS backend uses `flashinfer-python==0.6.13` to JIT-compile its SM80
@@ -26,16 +26,17 @@ extension. Report JIT compilation separately from steady-state timing.
 
 ```python
 import torch
-from gram_newton_schulz_ampere import StandardNewtonSchulz
+from gram_newton_schulz_ampere import GramNewtonSchulz
 
-orthogonalize = StandardNewtonSchulz(ns_backend="torch")
+orthogonalize = GramNewtonSchulz(ns_backend="torch")
 matrix = torch.randn((1, 128, 256), device="cuda", dtype=torch.bfloat16)
 result = orthogonalize(matrix)
 ```
 
-`StandardNewtonSchulz` is the default optimizer algorithm because it was faster
-than Gram Newton-Schulz across the measured A100 shape grid. Use
-`GramNewtonSchulz` when that algorithm is required.
+`GramNewtonSchulz` is the default optimizer algorithm. The Torch/cuBLAS path
+uses shape-specialized `torch.compile` closures below dimension 256 and dynamic
+closures for larger matrices. Both use CUDA graphs to remove eager dispatch
+overhead. Pass `ns_compile=False` for eager debugging or outer graph capture.
 
 Available backends are:
 
@@ -54,7 +55,7 @@ weight = torch.nn.Parameter(torch.randn((128, 256), device="cuda"))
 optimizer = Muon(
     [weight],
     lr=3e-3,
-    ns_algorithm="standard_newton_schulz",
+    ns_algorithm="gram_newton_schulz",
     ns_backend="torch",
 )
 ```
