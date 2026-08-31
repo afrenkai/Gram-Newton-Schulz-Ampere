@@ -4,14 +4,13 @@
 #include <c10/cuda/CUDAException.h>
 #include <pybind11/stl.h>
 #include <torch/extension.h>
-
 #include <cuda.h>
 #include <cuda_runtime.h>
-
 #include <cmath>
 #include <cstdint>
 #include <tuple>
 #include <vector>
+
 
 namespace {
 
@@ -213,8 +212,8 @@ __global__ void apply_rows_kernel(scalar_t* parameter,
 
 void validate_matrix(torch::Tensor const& tensor, char const* name) {
   TORCH_CHECK(tensor.is_cuda(), name, " must be a CUDA tensor");
-  TORCH_CHECK(tensor.is_contiguous(), name, " must be contiguous");
-  TORCH_CHECK(tensor.dim() >= 2, name, " must have at least two dimensions");
+  TORCH_CHECK(tensor.is_contiguous(), name, " must be C contiguous");
+  TORCH_CHECK(tensor.dim() >= 2, name, " must have at least two dimensions, otherwise just toss to Adam");
 }
 
 std::vector<int64_t> leading_shape(torch::Tensor const& tensor) {

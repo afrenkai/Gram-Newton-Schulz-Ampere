@@ -1,10 +1,8 @@
 import copy
 from collections.abc import Generator
-
 import pytest
 import torch
 from torch import Tensor
-
 from gram_newton_schulz_ampere import Dion3
 from gram_newton_schulz_ampere.dion3_update import (
     apply_dion3_update,
@@ -17,19 +15,7 @@ from gram_newton_schulz_ampere.kernels.dion3_cuda import (
     select_dion3_rows_cuda,
     select_dion3_rows_cuda_batch,
 )
-
-
-@pytest.fixture(autouse=True)
-def cuda_default_device() -> Generator[None, None, None]:
-    if not torch.cuda.is_available():
-        pytest.skip("requires CUDA")
-    with torch.device("cuda"):
-        yield
-
-
-class IdentityOrthogonalizer:
-    def __call__(self, matrix: Tensor) -> Tensor:
-        return matrix
+from tests.test_utils import IdentityOrthogonalizer
 
 
 def test_dion3_update_primitives() -> None:
@@ -215,6 +201,7 @@ def test_dion3_validation_and_add_param_group() -> None:
 
     bfloat16_matrix = torch.nn.Parameter(torch.zeros(3, 4, dtype=torch.bfloat16))
     bfloat16_optimizer = Dion3([bfloat16_matrix])
+    # this NEEDS to be in fp32
     assert (
         bfloat16_optimizer.state[bfloat16_matrix]["variance_neuron"].dtype
         == torch.float32
@@ -223,16 +210,16 @@ def test_dion3_validation_and_add_param_group() -> None:
     invalid_fraction = torch.nn.Parameter(torch.zeros(2, 2))
     try:
         Dion3([invalid_fraction], fraction=0.0)
-    except ValueError as error:
-        assert "fraction" in str(error)
+    except ValueError as e:
+        assert "fraction" in str(e)
     else:
         raise AssertionError("Expected invalid fraction rejection")
 
     invalid_shape = torch.nn.Parameter(torch.zeros(2))
     try:
         Dion3([invalid_shape])
-    except ValueError as error:
-        assert "matrix" in str(error)
+    except ValueError as e:
+        assert "matrix" in str(e)
     else:
         raise AssertionError("Expected invalid shape rejection")
 

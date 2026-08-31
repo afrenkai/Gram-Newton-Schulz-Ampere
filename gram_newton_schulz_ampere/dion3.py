@@ -39,8 +39,6 @@ from gram_newton_schulz_ampere.optimizer_types import (
 
 
 class Dion3(Muon):
-    """Dion3 with Ampere Gram Newton--Schulz kernels."""
-
     def __init__(
         self,
         params: OptimizerParameters,

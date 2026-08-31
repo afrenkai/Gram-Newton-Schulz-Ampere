@@ -11,11 +11,12 @@ from jaxtyping import Float, Int, jaxtyped
 from torch import Tensor
 from torch.utils.cpp_extension import load
 
-from gram_newton_schulz_ampere.kernels.types import Dion3CudaExtension
+from gram_newton_schulz_ampere.kernels.protocols import Dion3CudaExtension
 
 
 @cache
 def dion3_cuda_extension() -> Dion3CudaExtension:
+    # how should I handle this lol
     source_path = Path(__file__).with_suffix(".cu")
     loaded_extension = load(
         name="gram_newton_schulz_ampere_dion3_cuda",

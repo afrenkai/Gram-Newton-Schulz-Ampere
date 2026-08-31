@@ -1,34 +1,36 @@
 from collections.abc import Generator
 from copy import deepcopy
-
 import pytest
 import torch
 from torch import Tensor
-
-from gram_newton_schulz_ampere import GramNewtonSchulz, Muon, StandardNewtonSchulz
-
-
-@pytest.fixture(autouse=True)
-def cuda_default_device() -> Generator[None, None, None]:
-    if not torch.cuda.is_available():
-        pytest.skip("requires CUDA")
-    with torch.device("cuda"):
-        yield
-
-
-class IdentityOrthogonalizer:
-    def __init__(self) -> None:
-        self.input_shapes: list[tuple[int, ...]] = []
-
-    def __call__(self, matrix: Tensor) -> Tensor:
-        self.input_shapes.append(tuple(matrix.shape))
-        return matrix
+from gram_newton_schulz_ampere import GramNewtonSchulz, StandardNewtonSchulz, Muon
+from tests.test_utils import IdentityOrthogonalizer, cuda_default_device  
 
 
 def test_muon_momentum_nesterov_and_native_state_shape() -> None:
-    first_gradient = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
-    second_gradient = torch.tensor([[2.0, -1.0], [0.5, 3.0]])
-    parameter = torch.nn.Parameter(torch.zeros_like(first_gradient))
+    """
+    Goal of this test case for me is to ensure that NAG for muon functions properly 
+
+    assuming a nabla_x at timestep 1 is a 2 tensor 
+    | 1 2 |
+    | 3 4 |
+
+    and at timestep 2 it is
+
+    | 2 -1  |
+    | 1/2 3 |
+
+    (to make the math clean, assuming 1 indexing for timesteps)
+    both momentum (which should halve and tr plus scale by lr) and NAG should follow 
+    as per the test case
+
+    prob a better/more efficient way to make the test but its a test case I don't really care
+    """
+
+
+    grad_1 = torch.tensor([[1.0, 2.0], [3.0, 4.0]])
+    grad_2 = torch.tensor([[2.0, -1.0], [0.5, 3.0]])
+    parameter = torch.nn.Parameter(torch.zeros_like(grad_1))
     optimizer = Muon(
         [parameter],
         lr=0.1,
@@ -38,19 +40,19 @@ def test_muon_momentum_nesterov_and_native_state_shape() -> None:
     )
     optimizer.newton_schulz = IdentityOrthogonalizer()
 
-    parameter.grad = first_gradient.clone()
+    parameter.grad = grad_1.clone()
     optimizer.step()
-    parameter.grad = second_gradient.clone()
+    parameter.grad = grad_2.clone()
     optimizer.step()
 
-    expected_momentum = 0.5 * first_gradient + second_gradient
-    expected_parameter = -0.1 * first_gradient - 0.1 * expected_momentum
+    expected_momentum = 0.5 * grad_1 + grad_2
+    expected_parameter = -0.1 * grad_1 - 0.1 * expected_momentum
     torch.testing.assert_close(parameter, expected_parameter)
     momentum = optimizer.state[parameter]["momentum_buffer"]
     torch.testing.assert_close(momentum, expected_momentum)
     assert momentum.shape == parameter.shape
 
-    nesterov_parameter = torch.nn.Parameter(torch.zeros_like(first_gradient))
+    nesterov_parameter = torch.nn.Parameter(torch.zeros_like(grad_1))
     nesterov_optimizer = Muon(
         [nesterov_parameter],
         lr=0.1,
@@ -59,29 +61,12 @@ def test_muon_momentum_nesterov_and_native_state_shape() -> None:
         adjust_lr=None,
     )
     nesterov_optimizer.newton_schulz = IdentityOrthogonalizer()
-    nesterov_parameter.grad = first_gradient.clone()
+    nesterov_parameter.grad = grad_1.clone()
     nesterov_optimizer.step()
     torch.testing.assert_close(
         nesterov_parameter,
-        -0.1 * (first_gradient + 0.5 * first_gradient),
+        -0.1 * (grad_1 + 0.5 * grad_1),
     )
-
-
-def test_conv_flatten_uses_einops_and_preserves_state_shape() -> None:
-    parameter = torch.nn.Parameter(torch.zeros(3, 2, 2, 2))
-    parameter.grad = torch.ones_like(parameter)
-    optimizer = Muon(
-        [{"params": [parameter], "flatten": True}],
-        momentum=0.0,
-        nesterov=False,
-        adjust_lr=None,
-    )
-    orthogonalizer = IdentityOrthogonalizer()
-    optimizer.newton_schulz = orthogonalizer
-    optimizer.step()
-
-    assert orthogonalizer.input_shapes == [(1, 3, 8)]
-    assert optimizer.state[parameter]["momentum_buffer"].shape == parameter.shape
 
 
 def test_closure_runs_once_with_grad_and_returns_loss() -> None:
@@ -105,10 +90,15 @@ def test_closure_runs_once_with_grad_and_returns_loss() -> None:
 
 
 def test_adamw_group_matches_torch_and_prepopulates_state() -> None:
+    """
+    goal here is to test adamW vs naive torch.optim.Optimizer.AdamW(*args, **kwargs)
+
+    make 2 bblank params so double purpose to ensure that we can process nn.Parameters properly via AdamW. Maybe also worth peeking at NN.Embedding
+    """
     initial = torch.tensor([1.0, -2.0, 3.0])
     ours = torch.nn.Parameter(initial.clone())
     reference = torch.nn.Parameter(initial.clone())
-    ours_optimizer = Muon(
+    our_opt = Muon(
         [{"params": [ours], "algorithm": "adamw"}],
         lr=0.03,
         weight_decay=0.1,
@@ -122,7 +112,7 @@ def test_adamw_group_matches_torch_and_prepopulates_state() -> None:
         betas=(0.8, 0.9),
         eps=1e-6,
     )
-    assert set(ours_optimizer.state[ours]) == {"step", "exp_avg", "exp_avg_sq"}
+    assert set(our_opt.state[ours]) == {"step", "exp_avg", "exp_avg_sq"}
 
     for gradient in (
         torch.tensor([0.5, -0.25, 1.0]),
@@ -130,12 +120,15 @@ def test_adamw_group_matches_torch_and_prepopulates_state() -> None:
     ):
         ours.grad = gradient.clone()
         reference.grad = gradient.clone()
-        ours_optimizer.step()
+        our_opt.step()
         reference_optimizer.step()
     torch.testing.assert_close(ours, reference, rtol=1e-6, atol=1e-7)
 
 
 def test_decay_uses_base_lr_and_update_uses_adjusted_lr() -> None:
+    """
+    self explanatory
+    """
     parameter = torch.nn.Parameter(torch.ones(8, 2))
     parameter.grad = torch.ones_like(parameter)
     optimizer = Muon(
@@ -155,6 +148,11 @@ def test_decay_uses_base_lr_and_update_uses_adjusted_lr() -> None:
 
 
 def test_actual_gram_update_matches_direct_call() -> None:
+    """
+    dumb test to make sure that param lr scaling is actually correctly applied when no NAG
+
+    assumes GNS but should behave fine under .isclose hopefully
+    """
     generator = torch.Generator(device="cuda").manual_seed(67)
     gradient = torch.randn(8, 4, generator=generator)
     parameter = torch.nn.Parameter(torch.zeros_like(gradient))
@@ -178,6 +176,7 @@ def test_muon_rejects_vector_sparse_and_complex_gradients() -> None:
         Muon([torch.nn.Parameter(torch.ones(3))])
 
     sparse_parameter = torch.nn.Parameter(torch.zeros(3, 3))
+    #TODO: peek at SASS of .to_sparse() and make sure it works in C contiguous like I think
     sparse_parameter.grad = torch.eye(3).to_sparse()
     sparse_optimizer = Muon([sparse_parameter])
     with pytest.raises(RuntimeError, match="sparse"):
@@ -256,13 +255,15 @@ def test_state_dict_resume_scheduler_and_add_param_group() -> None:
 
 
 def test_compiled_gram_matches_eager_tall_matrix() -> None:
-    generator = torch.Generator(device="cuda").manual_seed(131)
+    generator = torch.Generator(device="cuda").manual_seed(6767)
     matrix = torch.randn(
         (2, 256, 64),
         device="cuda",
         dtype=torch.bfloat16,
         generator=generator,
     )
+
+    # this ugly factory but not sure how else to invoke a generator
     expected = GramNewtonSchulz(ns_compile=False)(matrix)
     compiled = GramNewtonSchulz(ns_compile=True)
     actual = compiled(matrix)

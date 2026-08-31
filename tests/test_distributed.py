@@ -3,7 +3,6 @@ import shutil
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
-
 import pytest
 import torch
 import torch.distributed.checkpoint as distributed_checkpoint
@@ -15,7 +14,6 @@ from torch.distributed.checkpoint.state_dict import (
 from torch.distributed.device_mesh import DeviceMesh, init_device_mesh
 from torch.distributed.tensor import DTensor, Shard, distribute_tensor
 from torch.nn.parallel import DistributedDataParallel
-
 from gram_newton_schulz_ampere import Dion3, Muon
 
 
@@ -159,7 +157,7 @@ def test_distributed_muon_matches_single_rank(
         mixed_optimizer.step()
 
     if process_rank == 0:
-        print("distributed Muon parity passed")
+        print("distributed Muon is same as gns' muon")
 
 
 def test_distributed_dion3_matches_single_rank(
@@ -170,7 +168,7 @@ def test_distributed_dion3_matches_single_rank(
     generator = torch.Generator(device="cuda").manual_seed(113)
     replicated_parameters = [
         torch.nn.Parameter(torch.randn(8, 4, generator=generator))
-        for parameter_index in range(3)
+        for param_idx in range(3)
     ]
     for parameter in replicated_parameters:
         parameter.grad = torch.randn(8, 4, generator=generator)
@@ -230,13 +228,14 @@ def test_distributed_dion3_matches_single_rank(
     relative_difference = (
         distributed_update - reference_update
     ).norm() / reference_update.norm().clamp(min=1e-8)
+    # had some bugs with eps but this works ok. 
     cosine = torch.nn.functional.cosine_similarity(
         distributed_update.flatten(),
         reference_update.flatten(),
         dim=0,
     )
     assert relative_difference < 0.2
-    assert cosine > 0.98
+    assert cosine > 0.99
     momentum = optimizer.state[parameter]["momentum_buffer"]
     variance = optimizer.state[parameter]["variance_neuron"]
     assert isinstance(momentum, DTensor)
@@ -265,11 +264,17 @@ def test_distributed_dion3_matches_single_rank(
         adjust_lr=None,
         distributed_mesh=distributed_device_mesh,
     )
+
+
+    # ew handle better later because this can't fly. 
+    # TODO: think of a better way to handle resuming via torchrun in test case
     checkpoint_path = Path(tempfile.gettempdir()) / (
         f"ampere-dion3-dcp-{os.environ['MASTER_PORT']}"
     )
     if process_rank == 0 and checkpoint_path.exists():
         shutil.rmtree(checkpoint_path)
+
+
     distributed.barrier()
     distributed_checkpoint.save(
         {"optimizer": optimizer_state},

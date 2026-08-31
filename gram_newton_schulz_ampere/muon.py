@@ -36,8 +36,6 @@ from gram_newton_schulz_ampere.optimizer_types import (
 
 
 class Muon(Optimizer):
-    """Muon with Ampere kernels and distributed PyTorch tensors."""
-
     def __init__(
         self,
         params: OptimizerParameters,

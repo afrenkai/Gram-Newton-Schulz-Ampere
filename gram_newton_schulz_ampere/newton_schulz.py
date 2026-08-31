@@ -9,7 +9,7 @@ from torch import Tensor
 
 from gram_newton_schulz_ampere.coefficients import polar_express_coefficients
 from gram_newton_schulz_ampere.kernels.interface import select_matrix_backend
-from gram_newton_schulz_ampere.kernels.types import MatrixBackend
+from gram_newton_schulz_ampere.kernels.protocols import MatrixBackend
 from gram_newton_schulz_ampere.optimizer_types import NewtonSchulzBackend
 
 

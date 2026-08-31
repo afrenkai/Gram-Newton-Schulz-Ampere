@@ -4,8 +4,8 @@ from gram_newton_schulz_ampere.kernels.cutlass_ns import (
     CutlassBackend,
     cutlass_is_installed,
 )
+from gram_newton_schulz_ampere.kernels.protocols import MatrixBackend
 from gram_newton_schulz_ampere.kernels.torch_ns import TorchBackend
-from gram_newton_schulz_ampere.kernels.types import MatrixBackend
 
 try:
     from gram_newton_schulz_ampere.kernels import triton_ns

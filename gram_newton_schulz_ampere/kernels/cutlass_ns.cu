@@ -1,6 +1,5 @@
 #include <cstdint>
 #include <type_traits>
-
 #include "cutlass/arch/arch.h"
 #include "cutlass/cutlass.h"
 #include "cutlass/epilogue/thread/linear_combination.h"
@@ -10,6 +9,7 @@
 #include "cutlass/layout/matrix.h"
 #include "cutlass/numeric_types.h"
 #include "tvm_ffi_utils.h"
+
 
 namespace gram_newton_schulz_ampere {
 
@@ -63,47 +63,47 @@ void launch_baddbmm(TensorView accumulator, TensorView left, TensorView right,
 }
 
 template <typename Element, typename LayoutB>
-void dispatch_tactic(TensorView accumulator, TensorView left, TensorView right,
+void dispatch_strat(TensorView accumulator, TensorView left, TensorView right,
                      TensorView output, double alpha, double beta,
-                     int64_t tactic, cudaStream_t stream) {
-  if (tactic == 0) {
+                     int64_t strat, cudaStream_t stream) {
+  if (strat == 0) {
     launch_baddbmm<Element, LayoutB, cutlass::gemm::GemmShape<128, 128, 32>,
                    cutlass::gemm::GemmShape<64, 64, 32>>(
         accumulator, left, right, output, alpha, beta, stream);
     return;
   }
-  if (tactic == 1) {
+  if (strat == 1) {
     launch_baddbmm<Element, LayoutB, cutlass::gemm::GemmShape<64, 64, 32>,
                    cutlass::gemm::GemmShape<32, 32, 32>>(
         accumulator, left, right, output, alpha, beta, stream);
     return;
   }
-  if (tactic == 2) {
+  if (strat == 2) {
     launch_baddbmm<Element, LayoutB, cutlass::gemm::GemmShape<64, 128, 32>,
                    cutlass::gemm::GemmShape<32, 64, 32>>(
         accumulator, left, right, output, alpha, beta, stream);
     return;
   }
-  TVM_FFI_LOG_AND_THROW(ValueError) << "CUTLASS tactic must be 0, 1, or 2";
+  TVM_FFI_LOG_AND_THROW(ValueError) << "CUTLASS strat has to be 0, 1, or 2";
 }
 
 template <typename Element>
 void dispatch_layout(TensorView accumulator, TensorView left, TensorView right,
                      TensorView output, double alpha, double beta,
-                     int64_t tactic, bool right_column_major,
+                     int64_t strat, bool right_column_major,
                      cudaStream_t stream) {
   if (right_column_major) {
-    dispatch_tactic<Element, ColumnMajor>(accumulator, left, right, output,
-                                         alpha, beta, tactic, stream);
+    dispatch_strat <Element, ColumnMajor>(accumulator, left, right, output,
+                                         alpha, beta, strat, stream);
   } else {
-    dispatch_tactic<Element, RowMajor>(accumulator, left, right, output, alpha,
-                                      beta, tactic, stream);
+    dispatch_strat<Element, RowMajor>(accumulator, left, right, output, alpha,
+                                      beta, strat, stream);
   }
 }
 
 void cutlass_baddbmm(TensorView accumulator, TensorView left, TensorView right,
                      TensorView output, double alpha, double beta,
-                     int64_t tactic, bool right_column_major) {
+                     int64_t strat, bool right_column_major) {
   CHECK_CUDA(accumulator);
   CHECK_CUDA(left);
   CHECK_CUDA(right);
@@ -144,16 +144,16 @@ void cutlass_baddbmm(TensorView accumulator, TensorView left, TensorView right,
   switch (encode_dlpack_dtype(left.dtype())) {
     case float16_code:
       dispatch_layout<cutlass::half_t>(accumulator, left, right, output, alpha,
-                                       beta, tactic, right_column_major, stream);
+                                       beta, strat, right_column_major, stream);
       return;
     case bfloat16_code:
       dispatch_layout<cutlass::bfloat16_t>(
-          accumulator, left, right, output, alpha, beta, tactic,
+          accumulator, left, right, output, alpha, beta, strat,
           right_column_major, stream);
       return;
     default:
       TVM_FFI_LOG_AND_THROW(TypeError)
-          << "CUTLASS SM80 baddbmm requires float16 or bfloat16 tensors";
+          << "CUTLASS SM80 baddbmm requires float16 or bfloat16 tensors (or I guess fp32 but we aren't doing that)";
   }
 }
 

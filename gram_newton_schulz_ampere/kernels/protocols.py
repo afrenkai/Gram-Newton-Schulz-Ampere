@@ -3,6 +3,24 @@ from typing import Protocol
 from torch import Tensor
 
 
+class FlashInferJitSpec(Protocol):
+    def build_and_load(self) -> object: ...
+
+
+class CutlassJitModule(Protocol):
+    def cutlass_baddbmm(
+        self,
+        accumulator: Tensor,
+        left: Tensor,
+        right: Tensor,
+        output: Tensor,
+        alpha: float,
+        beta: float,
+        tactic: int,
+        right_column_major: bool,
+    ) -> None: ...
+
+
 class MatrixBackend(Protocol):
     def symmetric_matmul(self, left: Tensor, right: Tensor) -> Tensor: ...
 

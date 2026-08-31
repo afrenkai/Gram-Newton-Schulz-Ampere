@@ -2,35 +2,22 @@ from collections.abc import Callable
 from functools import cache
 from hashlib import sha256
 from pathlib import Path
-from typing import Protocol, cast
+from typing import cast
 
 import torch
 from torch import Tensor
 
-from gram_newton_schulz_ampere.kernels.types import MatrixBackend
+from gram_newton_schulz_ampere.kernels.protocols import (
+    CutlassJitModule,
+    FlashInferJitSpec,
+    MatrixBackend,
+)
 
 try:
     from flashinfer.jit import gen_jit_spec  # ty: ignore[unresolved-import]
 except ImportError:
     gen_jit_spec: Callable[..., object] | None = None
 
-
-class FlashInferJitSpecification(Protocol):
-    def build_and_load(self) -> object: ...
-
-
-class CutlassJitModule(Protocol):
-    def cutlass_baddbmm(
-        self,
-        accumulator: Tensor,
-        left: Tensor,
-        right: Tensor,
-        output: Tensor,
-        alpha: float,
-        beta: float,
-        tactic: int,
-        right_column_major: bool,
-    ) -> None: ...
 
 
 @cache
@@ -42,7 +29,7 @@ def load_cutlass_module() -> CutlassJitModule:
     source_path = Path(__file__).with_suffix(".cu")
     source_digest = sha256(source_path.read_bytes()).hexdigest()[:12]
     specification = cast(
-        FlashInferJitSpecification,
+        FlashInferJitSpec,
         gen_jit_spec(
             f"gram_newton_schulz_ampere_sm80_{source_digest}",
             (source_path,),
