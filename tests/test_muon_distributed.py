@@ -241,7 +241,7 @@ def test_distributed_dion3_matches_single_rank(
     variance = optimizer.state[parameter]["variance_neuron"]
     assert isinstance(momentum, DTensor)
     assert isinstance(variance, DTensor)
-    assert variance.to_local().shape == (3, 1)
+    assert variance.to_local().shape == (*momentum.to_local().shape[:-1], 1)
 
     model = torch.nn.Module()
     model.register_parameter("matrix", parameter)
