@@ -322,6 +322,9 @@ def test_distributed_dion3_matches_single_rank(
         )
         for mixed_full_parameter in mixed_full_parameters
     ]
+    mixed_local_shapes = tuple(
+        mixed_parameter.to_local().shape for mixed_parameter in mixed_parameters
+    )
     for mixed_parameter in mixed_parameters:
         mixed_parameter.grad = torch.ones_like(mixed_parameter)
     mixed_optimizer = Dion3(
@@ -331,8 +334,10 @@ def test_distributed_dion3_matches_single_rank(
         distributed_mesh=distributed_device_mesh,
     )
     mixed_optimizer.step()
-    assert mixed_parameters[0].to_local().shape[0] == 3
-    assert mixed_parameters[1].to_local().shape[0] in {2, 3}
+    assert (
+        tuple(mixed_parameter.to_local().shape for mixed_parameter in mixed_parameters)
+        == mixed_local_shapes
+    )
 
     batched_parameters = [
         torch.nn.Parameter(torch.randn(2, 4, 3, generator=generator)),
