@@ -83,8 +83,11 @@ optimizer = Dion3(
 ```
 
 Dion3 implements row selection, error-feedback momentum, and FP32 NorMuon
-per-neuron normalization. `selection_scope="local"` is currently supported;
-fractional row-sharded selection is therefore layout-dependent.
+per-neuron normalization. On first use, it builds handwritten `sm_80` and `sm_86`
+CUDA kernels plus batched C++ entry points for momentum and decay, row
+selection, normalization, and update application. `selection_scope="local"` is
+currently supported. Fractional row-sharded selection and norm preservation are
+therefore local to each shard and layout-dependent.
 
 ## Distributed layouts
 

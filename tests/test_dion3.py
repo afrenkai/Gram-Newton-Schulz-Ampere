@@ -11,6 +11,12 @@ from gram_newton_schulz_ampere.dion3_update import (
     normalize_dion3_rows,
     select_dion3_rows,
 )
+from gram_newton_schulz_ampere.kernels.dion3_cuda import (
+    normalize_apply_rows_cuda,
+    normalize_apply_rows_cuda_batch,
+    select_dion3_rows_cuda,
+    select_dion3_rows_cuda_batch,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -251,4 +257,111 @@ def test_dion3_rejected_groups_are_atomic() -> None:
     with pytest.raises(ValueError, match="Muon parameter groups"):
         Dion3(
             [{"params": [rejected], "algorithm": "muon"}],
+        )
+
+
+def test_dion3_cuda_batched_entry_points_match_individual_calls() -> None:
+    generator = torch.Generator(device="cuda").manual_seed(317)
+    shapes = ((64, 32), (96, 48))
+    gradients = [torch.randn(shape, generator=generator) for shape in shapes]
+    reference_momenta = [torch.randn(shape, generator=generator) for shape in shapes]
+    batched_momenta = [momentum.clone() for momentum in reference_momenta]
+    reference_parameters = [torch.randn(shape, generator=generator) for shape in shapes]
+    batched_parameters = [parameter.clone() for parameter in reference_parameters]
+    selected_counts = [16, 24]
+    reference_updates: list[Tensor] = []
+    reference_indices: list[Tensor] = []
+    for tensor_index in range(len(shapes)):
+        selected_update, indices = select_dion3_rows_cuda(
+            reference_momenta[tensor_index],
+            gradients[tensor_index],
+            0.25,
+            0.95,
+            selected_counts[tensor_index],
+            reference_parameters[tensor_index],
+            0.999,
+        )
+        reference_updates.append(selected_update)
+        reference_indices.append(indices)
+
+    batched_updates, batched_indices = select_dion3_rows_cuda_batch(
+        batched_momenta,
+        gradients,
+        batched_parameters,
+        selected_counts,
+        0.95,
+        0.999,
+    )
+    for tensor_index in range(len(shapes)):
+        torch.testing.assert_close(
+            batched_momenta[tensor_index],
+            reference_momenta[tensor_index],
+            rtol=0,
+            atol=0,
+        )
+        torch.testing.assert_close(
+            batched_parameters[tensor_index],
+            reference_parameters[tensor_index],
+            rtol=0,
+            atol=0,
+        )
+        torch.testing.assert_close(
+            batched_updates[tensor_index],
+            reference_updates[tensor_index],
+            rtol=0,
+            atol=0,
+        )
+        torch.testing.assert_close(
+            batched_indices[tensor_index],
+            reference_indices[tensor_index],
+            rtol=0,
+            atol=0,
+        )
+
+    reference_variances = [
+        torch.zeros((shape[0], 1), dtype=torch.float32) for shape in shapes
+    ]
+    batched_variances = [variance.clone() for variance in reference_variances]
+    normalized_reference_parameters = [
+        parameter.clone() for parameter in reference_parameters
+    ]
+    normalized_batched_parameters = [
+        parameter.clone() for parameter in reference_parameters
+    ]
+    adjusted_learning_rates = [0.01, 0.02]
+    for tensor_index in range(len(shapes)):
+        normalize_apply_rows_cuda(
+            normalized_reference_parameters[tensor_index],
+            reference_updates[tensor_index],
+            reference_variances[tensor_index],
+            reference_indices[tensor_index],
+            0.95,
+            1e-8,
+            0.01,
+            0.0,
+            adjusted_learning_rates[tensor_index],
+        )
+    normalize_apply_rows_cuda_batch(
+        normalized_batched_parameters,
+        reference_updates,
+        batched_variances,
+        reference_indices,
+        0.95,
+        1e-8,
+        0.01,
+        0.0,
+        adjusted_learning_rates,
+    )
+    for tensor_index in range(len(shapes)):
+        torch.testing.assert_close(
+            normalized_batched_parameters[tensor_index],
+            normalized_reference_parameters[tensor_index],
+            rtol=0,
+            atol=0,
+        )
+        torch.testing.assert_close(
+            batched_variances[tensor_index],
+            reference_variances[tensor_index],
+            rtol=0,
+            atol=0,
         )

@@ -4,12 +4,10 @@ from typing import cast
 
 import torch
 from torch import Tensor
-from torch.distributed import ProcessGroup
 
 from gram_newton_schulz_ampere.dion3_update import (
     apply_dion3_update,
     normalize_dion3_rows,
-    select_dion3_rows,
 )
 from gram_newton_schulz_ampere.distributed_orthogonalization import (
     local_tensor,
@@ -17,6 +15,12 @@ from gram_newton_schulz_ampere.distributed_orthogonalization import (
     parameter_layout,
     resolve_gradient,
     validate_gradient_participation,
+)
+from gram_newton_schulz_ampere.kernels.dion3_cuda import (
+    normalize_apply_rows_cuda,
+    normalize_apply_rows_cuda_batch,
+    select_dion3_rows_cuda,
+    select_dion3_rows_cuda_batch,
 )
 from gram_newton_schulz_ampere.muon import Muon
 from gram_newton_schulz_ampere.optimizer_types import (
@@ -193,10 +197,19 @@ class Dion3(Muon):
 
         fraction = cast(float, parameter_group["fraction"])
         error_feedback_decay = cast(float, parameter_group["momentum"])
-        selected_updates: list[Tensor] = []
-        selected_indices: list[Tensor] = []
+        learning_rate = cast(LearningRate, parameter_group["lr"])
+        weight_decay = cast(LearningRate, parameter_group["weight_decay"])
+        if isinstance(learning_rate, float) and isinstance(weight_decay, float):
+            parameter_decay = 1.0 - learning_rate * weight_decay
+            remaining_weight_decay: LearningRate = 0.0
+        else:
+            parameter_decay = 1.0
+            remaining_weight_decay = weight_decay
         selected_global_shapes: list[tuple[int, ...]] = []
-        normalization_process_groups: list[ProcessGroup | None] = []
+        gradients: list[Tensor] = []
+        momentum_buffers: list[Tensor] = []
+        local_parameters: list[Tensor] = []
+        selected_counts: list[int] = []
         for parameter in parameters:
             layout = parameter_layout(parameter, self.distributed_mesh, False)
             matrix_row_dimension = parameter.ndim - 2
@@ -204,7 +217,6 @@ class Dion3(Muon):
                 raise NotImplementedError(
                     "Dion3 supports replicated matrices and row-sharded DTensors"
                 )
-            selected_count = None
             if layout.sharded_tensor_dimension == matrix_row_dimension:
                 if layout.process_group is None:
                     raise ValueError("A row-sharded parameter requires a process group")
@@ -213,7 +225,8 @@ class Dion3(Muon):
                 selected_count = max(1, ceil(fraction * padded_local_rows))
                 global_selected_rows = selected_count * world_size
             else:
-                global_selected_rows = max(1, ceil(fraction * parameter.shape[-2]))
+                selected_count = max(1, ceil(fraction * parameter.shape[-2]))
+                global_selected_rows = selected_count
 
             gradient = resolve_gradient(parameter)
             self.reject_sparse_or_complex_gradient(gradient)
@@ -221,23 +234,42 @@ class Dion3(Muon):
             momentum_buffer = local_tensor(
                 cast(Tensor, parameter_state["momentum_buffer"])
             )
-            selected_update, indices = select_dion3_rows(
-                momentum_buffer,
-                gradient,
-                fraction,
-                error_feedback_decay,
-                selected_count,
-            )
-            selected_updates.append(selected_update)
-            selected_indices.append(indices)
+            gradients.append(gradient)
+            momentum_buffers.append(momentum_buffer)
+            local_parameters.append(local_tensor(parameter))
+            selected_counts.append(selected_count)
             selected_global_shapes.append(
                 (*parameter.shape[:-2], global_selected_rows, parameter.shape[-1])
             )
-            normalization_process_groups.append(
-                layout.process_group
-                if layout.sharded_tensor_dimension == matrix_row_dimension
-                else None
+        if all(
+            0
+            < selected_counts[parameter_index]
+            < momentum_buffers[parameter_index].shape[-2]
+            for parameter_index in range(len(parameters))
+        ):
+            selected_updates, selected_indices = select_dion3_rows_cuda_batch(
+                momentum_buffers,
+                gradients,
+                local_parameters,
+                selected_counts,
+                error_feedback_decay,
+                parameter_decay,
             )
+        else:
+            selected_updates = []
+            selected_indices = []
+            for parameter_index in range(len(parameters)):
+                selected_update, indices = select_dion3_rows_cuda(
+                    momentum_buffers[parameter_index],
+                    gradients[parameter_index],
+                    fraction,
+                    error_feedback_decay,
+                    selected_counts[parameter_index],
+                    local_parameters[parameter_index],
+                    parameter_decay,
+                )
+                selected_updates.append(selected_update)
+                selected_indices.append(indices)
 
         orthogonalized_updates = orthogonalize_parameter_updates(
             parameters,
@@ -247,33 +279,76 @@ class Dion3(Muon):
             self.distributed_mesh,
             False,
         )
-        learning_rate = cast(LearningRate, parameter_group["lr"])
-        weight_decay = cast(LearningRate, parameter_group["weight_decay"])
         adjustment = cast(LearningRateAdjustment, parameter_group["adjust_lr"])
         muon_beta2 = cast(float, parameter_group["muon_beta2"])
-        for parameter_index, parameter in enumerate(parameters):
+        variance_neurons: list[Tensor] = []
+        adjusted_learning_rates: list[LearningRate] = []
+        for parameter in parameters:
             parameter_state = self.state[parameter]
-            variance_neuron = local_tensor(
-                cast(Tensor, parameter_state["variance_neuron"])
+            variance_neurons.append(
+                local_tensor(cast(Tensor, parameter_state["variance_neuron"]))
             )
-            normalized_update = normalize_dion3_rows(
-                orthogonalized_updates[parameter_index],
-                variance_neuron,
-                selected_indices[parameter_index],
+            adjusted_learning_rates.append(
+                self.adjusted_learning_rate(
+                    learning_rate,
+                    tuple(parameter.shape),
+                    adjustment,
+                )
+            )
+
+        if (
+            isinstance(learning_rate, float)
+            and isinstance(weight_decay, float)
+            and all(
+                isinstance(adjusted_learning_rate, float)
+                for adjusted_learning_rate in adjusted_learning_rates
+            )
+        ):
+            normalize_apply_rows_cuda_batch(
+                local_parameters,
+                orthogonalized_updates,
+                variance_neurons,
+                selected_indices,
                 muon_beta2,
                 1e-8,
-                normalization_process_groups[parameter_index],
-            )
-            adjusted_learning_rate = self.adjusted_learning_rate(
                 learning_rate,
-                tuple(parameter.shape),
-                adjustment,
+                0.0,
+                cast(list[float], adjusted_learning_rates),
             )
-            apply_dion3_update(
-                local_tensor(parameter),
-                normalized_update,
-                selected_indices[parameter_index],
-                learning_rate,
-                weight_decay,
-                adjusted_learning_rate,
-            )
+            return
+
+        for parameter_index in range(len(parameters)):
+            adjusted_learning_rate = adjusted_learning_rates[parameter_index]
+            if (
+                isinstance(learning_rate, float)
+                and isinstance(weight_decay, float)
+                and isinstance(adjusted_learning_rate, float)
+            ):
+                normalize_apply_rows_cuda(
+                    local_parameters[parameter_index],
+                    orthogonalized_updates[parameter_index].contiguous(),
+                    variance_neurons[parameter_index],
+                    selected_indices[parameter_index],
+                    muon_beta2,
+                    1e-8,
+                    learning_rate,
+                    0.0,
+                    adjusted_learning_rate,
+                )
+            else:
+                normalized_update = normalize_dion3_rows(
+                    orthogonalized_updates[parameter_index],
+                    variance_neurons[parameter_index],
+                    selected_indices[parameter_index],
+                    muon_beta2,
+                    1e-8,
+                    None,
+                )
+                apply_dion3_update(
+                    local_parameters[parameter_index],
+                    normalized_update,
+                    selected_indices[parameter_index],
+                    learning_rate,
+                    remaining_weight_decay,
+                    adjusted_learning_rate,
+                )
