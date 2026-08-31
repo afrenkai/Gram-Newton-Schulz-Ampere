@@ -1,0 +1,22 @@
+import pytest
+import torch
+
+pytest.importorskip("triton")
+
+from kernels.triton_ns import triton_baddbmm
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
+def test_triton_baddbmm_masks_partial_tiles() -> None:
+    generator = torch.Generator(device="cuda").manual_seed(67)
+    a = torch.randn(2, 35, 19, device="cuda", generator=generator)
+    b = torch.randn(2, 19, 37, device="cuda", generator=generator)
+    c = torch.randn(2, 35, 37, device="cuda", generator=generator)
+
+    expected = torch.baddbmm(c, a, b, beta=0.3, alpha=0.7)
+    actual = triton_baddbmm(c, a, b, beta=0.3, alpha=0.7)
+
+    # triton_baddbmm's tl.dot uses TF32 tensor cores on Ampere, while
+    # torch.baddbmm accumulates in full FP32, so tolerances are set to TF32
+    # levels rather than FP32-exact.
+    torch.testing.assert_close(actual, expected, rtol=2e-2, atol=2e-2)

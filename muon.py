@@ -1,17 +1,16 @@
 from collections.abc import Callable
-
 import torch
 from torch import Tensor
 from torch.optim.optimizer import Optimizer, ParamsT
-
-from ..coefficients import POLAR_EXPRESS_COEFFICIENTS, YOU_COEFFICIENTS
-from ..gram_newton_schulz import GramNewtonSchulz, StandardNewtonSchulz
-from .muon_utils.muon_matrix_split_utils import (
+from einops import rearrange
+from coefficients import POLAR_EXPRESS_COEFFICIENTS, YOU_COEFFICIENTS
+from newton_schulz import GramNewtonSchulz, StandardNewtonSchulz
+from muon_utils.muon_matrix_split_utils import (
     get_newton_schulz_inputs_from_gradients,
     reconstruct_update_from_newton_schulz_outputs,
     scale_newton_schulz_outputs_with_adjusted_lr,
 )
-from .muon_utils.muon_opt_utils import (
+from muon_utils.muon_opt_utils import (
     adjust_lr_rms_norm,
     adjust_lr_spectral_norm,
     create_param_batches,
@@ -84,7 +83,6 @@ class Muon(Optimizer):
         momentum: float = 0.95,
         nesterov: bool = True,
         adjust_lr: str | Callable[[float, tuple[int, ...]], float] | None = "rms_norm",
-        # Newton-Schulz
         ns_coefficients: list[tuple[float, float, float] | list[float]] | None = None,
         ns_coefficients_preset: str | None = None,
         ns_algorithm: str = "gram_newton_schulz",
@@ -95,7 +93,6 @@ class Muon(Optimizer):
         gram_newton_schulz_restart_iterations: (
             list[int] | tuple[int, ...] | None
         ) = None,
-        # Scalar optimizer
         scalar_optimizer: Optimizer | None = None,
     ):
         if lr < 0.0:
@@ -191,8 +188,7 @@ class Muon(Optimizer):
 
         self.scalar_optimizer = scalar_optimizer
         self._muon_param_groups = None
-        self._combined_param_groups = None  # Combined list of muon + scalar param groups, to be exposed for e.g. LR schedulers
-
+        self._combined_param_groups = None
         if self.scalar_optimizer is not None:
 
             @torch.compile(fullgraph=False)
@@ -238,11 +234,6 @@ class Muon(Optimizer):
 
     @property
     def param_groups(self):
-        """
-        Expose both muon and scalar optimizer param groups for LR schedulers.
-        LR's for both optimizers will be scheduled equivalently.
-        """
-        # During __init__, combined list might not be built yet - return _muon_param_groups
         if self._combined_param_groups is None:
             return (
                 self._muon_param_groups if self._muon_param_groups is not None else []
@@ -251,15 +242,10 @@ class Muon(Optimizer):
 
     @param_groups.setter
     def param_groups(self, value):
-        """
-        Set param_groups during initialization. Called by PyTorch's Optimizer.__init__.
-        After init, schedulers modify param group dicts in-place, so this setter is not called.
-        """
         self._muon_param_groups = value
 
     @torch.no_grad()
     def step(self, closure=None):
-        """Perform a single optimization step."""
         loss = None
         if closure is not None:
             with torch.enable_grad():
@@ -273,12 +259,6 @@ class Muon(Optimizer):
         return loss
 
     def zero_grad(self, set_to_none: bool = True):
-        """
-        Zero gradients for both Muon parameters and scalar optimizer parameters.
-
-        Args:
-            set_to_none: If True, set gradients to None instead of zero
-        """
         super().zero_grad(set_to_none=set_to_none)
 
         if self.scalar_optimizer is not None:
@@ -344,13 +324,11 @@ class Muon(Optimizer):
             len(params) == len(gradients) == len(momentums)
         ), "Number of parameters, gradients, and momentums for Muon must match"
 
-        # Validate split/recombine are both provided or both None
         if (param_split_fn is None) != (param_recombine_fn is None):
             raise ValueError(
                 "param_split_fn and param_recombine_fn must both be provided or both be None"
             )
 
-        # Update momentum and compute the inputs for orthogonalization
         ns_inputs = muon_update_pre_orthogonalize(
             G=gradients,
             M=momentums,
@@ -359,27 +337,21 @@ class Muon(Optimizer):
         )
 
         if len(ns_inputs) > 0:
-            # Split and group gradient submatrices for orthogonalization
             ns_inputs_by_shape, shape_indices, split_metadata = (
                 get_newton_schulz_inputs_from_gradients(ns_inputs, param_split_fn)
             )
 
-            # Orthogonalize each submatrix shape group
             orthogonalized_by_shape = {}
             max_bs = self.ns_max_batch_size
             for shape, ns_inputs_for_shape in ns_inputs_by_shape.items():
                 if max_bs is None or len(ns_inputs_for_shape) <= max_bs:
                     batched_input = torch.stack(ns_inputs_for_shape, dim=0)
                     orthogonalized_batched = self.newton_schulz(batched_input)
-                    # clone() needed: reduce-overhead CUDA graphs reuse output buffers
                     orthogonalized_by_shape[shape] = orthogonalized_batched.clone()
                 else:
-                    # Process in micro-batches to reduce peak memory.
-                    # Pre-allocate output to avoid holding all chunks + cat result simultaneously.
                     total = len(ns_inputs_for_shape)
                     first_end = min(max_bs, total)
                     first_chunk = torch.stack(ns_inputs_for_shape[:first_end], dim=0)
-                    # clone() needed: reduce-overhead CUDA graphs reuse output buffers
                     first_out = self.newton_schulz(first_chunk).clone()
                     full_output = first_out.new_empty((total, *first_out.shape[1:]))
                     full_output[:first_end].copy_(first_out)
@@ -389,12 +361,9 @@ class Muon(Optimizer):
                         full_output[i : i + chunk_out.shape[0]].copy_(chunk_out)
                     orthogonalized_by_shape[shape] = full_output
 
-            # Apply LR to each split section based on its shape
             orthogonalized_by_shape = scale_newton_schulz_outputs_with_adjusted_lr(
                 orthogonalized_by_shape, lr, adjust_lr_fn
             )
-
-            # Reconstruct orthogonalized matrices
             orthogonalized = reconstruct_update_from_newton_schulz_outputs(
                 orthogonalized_by_shape,
                 shape_indices,
@@ -404,5 +373,62 @@ class Muon(Optimizer):
         else:
             orthogonalized = []
 
-        # Apply weight decay and update parameters
         muon_update_post_orthogonalize(params, orthogonalized, lr, weight_decay)
+
+
+import torch
+from beartype import beartype
+from einops import rearrange
+from jaxtyping import Float, jaxtyped
+from torch import Tensor
+from torch.optim import Optimizer
+
+from ampere_ns_interface import TORCH_BE, TRITON_BE
+
+
+
+class Muon(Optimizer):
+    def __init__(
+        self,
+        params,
+        lr: float = 0.02,
+        momentum: float = 0.95,
+        nesterov: bool = True,
+        weight_decay: float = 0.0,
+        *,
+        use_triton: bool | None = None,
+    ) -> None:
+        super().__init__(params, dict(lr=lr, momentum=momentum, nesterov=nesterov, weight_decay=weight_decay))
+        if use_triton is None:
+            use_triton = TRITON_BE is not None and any(
+                parameter.is_cuda for group in self.param_groups for parameter in group["params"]
+            )
+        self.newton_schulz = NewtonSchulz(use_triton=use_triton)
+
+    @torch.no_grad()
+    def step(self, closure=None):
+        for group in self.param_groups:
+            lr, mom = group["lr"], group["momentum"]
+            nesterov, wd = group["nesterov"], group["weight_decay"]
+            for p in group["params"]:
+                if p.grad is None:
+                    continue
+                g = p.grad
+                orig_shape = g.shape
+                if g.ndim == 1:
+                    p.data.mul_(1 - lr * wd).add_(g, alpha=-lr)
+                    continue
+                if g.ndim == 4:
+                    g = rearrange(g, "out_ch in_ch kh kw -> out_ch (in_ch kh kw)")
+
+                state = self.state[p]
+                if "momentum_buffer" not in state:
+                    state["momentum_buffer"] = torch.zeros_like(g)
+                buf = state["momentum_buffer"]
+                buf.mul_(mom).add_(g)
+                g = g.add(buf, alpha=mom) if nesterov else buf
+
+                g = self.newton_schulz(g)
+                if wd:
+                    p.data.mul_(1 - lr * wd)
+                p.data.add_(g.reshape(orig_shape), alpha=-lr)

@@ -1,9 +1,3 @@
-"""
-Newton-Schulz coefficient presets.
-
-Each preset is a list of [a, b, c] coefficients for each iteration.
-"""
-
 # https://x.com/YouJiacheng/status/1905861218138804534
 YOU_COEFFICIENTS = [
     [4.0848, -6.8946, 2.9270],
@@ -13,8 +7,9 @@ YOU_COEFFICIENTS = [
     [2.8366, -3.0525, 1.2012],
 ]
 
+
 # https://arxiv.org/pdf/2505.16932
-_unmodified_polar_express_coefficients = [
+unmodified_polar_express_coefficients = [
     (8.28721201814563, -23.595886519098837, 17.300387312530933),
     (4.107059111542203, -2.9478499167379106, 0.5448431082926601),
     (3.9486908534822946, -2.908902115962949, 0.5518191394370137),
@@ -24,5 +19,7 @@ _unmodified_polar_express_coefficients = [
 safety_factor = 1.05
 POLAR_EXPRESS_COEFFICIENTS = [
     (a / safety_factor, b / safety_factor**3, c / safety_factor**5)
-    for (a, b, c) in _unmodified_polar_express_coefficients
+    for (a, b, c) in unmodified_polar_express_coefficients
 ]
+
+

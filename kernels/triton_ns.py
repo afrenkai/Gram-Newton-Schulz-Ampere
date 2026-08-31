@@ -38,8 +38,6 @@ import triton.language as tl
     ],
     key=["M", "N", "K"],
 )
-
-
 @triton.jit
 def baddbmm_kernel(
     C_ptr,
@@ -72,41 +70,33 @@ def baddbmm_kernel(
     batch_id = tl.program_id(axis=1)
 
     num_pid_m = tl.cdiv(M, BLOCK_SIZE_M)
-    num_pid_n = tl.cdiv(N, BLOCK_SIZE_N)
+    num_pid_n = tl.cdiv(N, BLOCK_SIZE_N)  # unreachable btw
     num_pid_in_group = GROUP_SIZE_M * num_pid_n
-
-
     group_id = pid // num_pid_in_group
     first_pid_m = group_id * GROUP_SIZE_M
     group_size_m = min(num_pid_m - first_pid_m, GROUP_SIZE_M)
-
-
-    pid_m = first_pid_m + (pid % group_size_m) #TODO: add assert ensuring that this mod doesn't lead to issues
-
+    pid_m = first_pid_m + (pid % group_size_m)
     pid_n = (pid % num_pid_in_group) // group_size_m
-
-    offs_am = (pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)) % M
-    offs_bn = (pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)) % N
+    offs_am = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
+    offs_bn = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
     offs_k = tl.arange(0, BLOCK_SIZE_K)
 
-    A_ptrs = (
-        A_ptr
-        + batch_id * stride_ab
-        + (offs_am[:, None] * stride_am + offs_k[None, :] * stride_ak)
-    )
-    B_ptrs = (
-        B_ptr
-        + batch_id * stride_bb
-        + (offs_k[:, None] * stride_bk + offs_bn[None, :] * stride_bn)
-    )
+    A_ptrs = A_ptr + batch_id * stride_ab + (offs_am[:, None] * stride_am + offs_k[None, :] * stride_ak)
+    B_ptrs = B_ptr + batch_id * stride_bb + (offs_k[:, None] * stride_bk + offs_bn[None, :] * stride_bn)
 
-    accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32) #not sure if ampere supports tl.float16 but maybe support in future?
+    accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
 
     for k in range(0, tl.cdiv(K, BLOCK_SIZE_K)):
         a = tl.load(
-            A_ptrs, mask=offs_k[None, :] < K - k * BLOCK_SIZE_K, other=0.0
+            A_ptrs,
+            mask=(offs_am[:, None] < M) & (offs_k[None, :] < K - k * BLOCK_SIZE_K),
+            other=0.0,
         )
-        b = tl.load(B_ptrs, mask=offs_k[:, None] < K - k * BLOCK_SIZE_K, other=0.0)
+        b = tl.load(
+            B_ptrs,
+            mask=(offs_k[:, None] < K - k * BLOCK_SIZE_K) & (offs_bn[None, :] < N),
+            other=0.0,
+        )
         accumulator += tl.dot(a, b)
         A_ptrs += BLOCK_SIZE_K * stride_ak
         B_ptrs += BLOCK_SIZE_K * stride_bk
@@ -116,21 +106,13 @@ def baddbmm_kernel(
 
     mask = (offs_cm[:, None] < M) & (offs_cn[None, :] < N)
 
-    C_ptrs = (
-        C_ptr
-        + batch_id * stride_cb
-        + (offs_cm[:, None] * stride_cm + offs_cn[None, :] * stride_cn)
-    )
+    C_ptrs = C_ptr + batch_id * stride_cb + (offs_cm[:, None] * stride_cm + offs_cn[None, :] * stride_cn)
     c = tl.load(C_ptrs, mask=mask, other=0.0)
 
     c = c.to(tl.float32)
     out = alpha * accumulator + beta * c
 
-    D_ptrs = (
-        D_ptr
-        + batch_id * stride_db
-        + (offs_cm[:, None] * stride_dm + offs_cn[None, :] * stride_dn)
-    )
+    D_ptrs = D_ptr + batch_id * stride_db + (offs_cm[:, None] * stride_dm + offs_cn[None, :] * stride_dn)
     tl.store(D_ptrs, out.to(C_ptr.dtype.element_ty), mask=mask)
 
 
@@ -150,7 +132,6 @@ def triton_baddbmm(C, A, B, alpha=1.0, beta=1.0):
         batch,
     )
 
-    #most linters wont recognize since this is a fp due to lack of defn of baddbmm
     baddbmm_kernel[grid](
         C,
         A,
