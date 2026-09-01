@@ -1,1 +1,0 @@
-ELF file    1: gram_newton_schulz_ampere_sm80_317455dec2ad.1.sm_80.cubin
