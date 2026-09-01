@@ -51,33 +51,16 @@ benchmark_image = (
 )
 
 
-def run_benchmark_process(arguments: list[str]) -> dict[str, object]:
-    completed_process = subprocess.run(
-        ["python", "/root/benchmark_symmetric_cutlass.py", *arguments],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return {
-        "returncode": completed_process.returncode,
-        "stdout": completed_process.stdout,
-        "stderr": completed_process.stderr,
-    }
-
-
 def benchmark_device(batch_sizes: tuple[int, ...]) -> dict[str, object]:
-    results: dict[str, object] = {
-        "device": torch.cuda.get_device_name(0),
-        "compute_capability": list(torch.cuda.get_device_capability(0)),
-        "batches": {},
-    }
     batch_results: dict[str, object] = {}
     with tempfile.TemporaryDirectory() as temporary_directory:
         temporary_path = Path(temporary_directory)
         for batch_size in batch_sizes:
             output_path = temporary_path / f"batch-{batch_size}.json"
-            process_result = run_benchmark_process(
+            completed_process = subprocess.run(
                 [
+                    "python",
+                    "/root/benchmark_symmetric_cutlass.py",
                     "--batch-sizes",
                     str(batch_size),
                     "--warmups",
@@ -86,13 +69,24 @@ def benchmark_device(batch_sizes: tuple[int, ...]) -> dict[str, object]:
                     "20",
                     "--output",
                     str(output_path),
-                ]
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
             )
-            if process_result["returncode"] == 0:
-                process_result["payload"] = json.loads(output_path.read_text())
-            batch_results[str(batch_size)] = process_result
-    results["batches"] = batch_results
-    return results
+            batch_result: dict[str, object] = {
+                "returncode": completed_process.returncode,
+                "stdout": completed_process.stdout,
+                "stderr": completed_process.stderr,
+            }
+            if completed_process.returncode == 0:
+                batch_result["payload"] = json.loads(output_path.read_text())
+            batch_results[str(batch_size)] = batch_result
+    return {
+        "device": torch.cuda.get_device_name(0),
+        "compute_capability": list(torch.cuda.get_device_capability(0)),
+        "batches": batch_results,
+    }
 
 
 @app.function(

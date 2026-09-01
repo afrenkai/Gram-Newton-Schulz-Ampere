@@ -97,6 +97,7 @@ def cutlass_symmetric_supports(
     left: Tensor,
     right: Tensor,
 ) -> bool:
+    """Check layouts and shapes, but not the caller's symmetry guarantee."""
     return (
         cutlass_supports_problem(accumulator, left, right)
         and accumulator.shape[1] == accumulator.shape[2]
@@ -106,10 +107,11 @@ def cutlass_symmetric_supports(
     )
 
 
-def select_cutlass_tactic(rows: int, columns: int) -> int:
-    if rows <= 128:
+def select_cutlass_tactic(output_rows: int) -> int:
+    """Choose the measured full-GEMM tile from the output row count."""
+    if output_rows <= 128:
         return 1
-    if rows <= 768:
+    if output_rows <= 768:
         return 2
     return 0
 
@@ -128,9 +130,7 @@ def cutlass_baddbmm(
             "Tensor shape, layout, dtype, or device is unsupported by SM80 CUTLASS"
         )
     selected_tactic = (
-        select_cutlass_tactic(left.shape[-2], right.shape[-1])
-        if tactic is None
-        else tactic
+        select_cutlass_tactic(left.shape[-2]) if tactic is None else tactic
     )
     if selected_tactic not in {0, 1, 2}:
         raise ValueError(f"CUTLASS tactic must be 0, 1, or 2, got {selected_tactic}")
@@ -175,6 +175,7 @@ def cutlass_symmetric_baddbmm(
     alpha: float = 1.0,
     beta: float = 1.0,
 ) -> Tensor:
+    """Compute and mirror one triangle of a caller-guaranteed symmetric result."""
     if not cutlass_symmetric_supports(accumulator, left, right):
         raise ValueError(
             "Tensor shape, layout, dtype, or device is unsupported by symmetric "
@@ -195,6 +196,7 @@ def cutlass_symmetric_baddbmm(
 
 
 def cutlass_symmetric_bmm(left: Tensor, right: Tensor) -> Tensor:
+    """Multiply matrices whose product is guaranteed symmetric by the caller."""
     output_shape = (*left.shape[:-2], left.shape[-2], right.shape[-1])
     accumulator = torch.empty(output_shape, dtype=left.dtype, device=left.device)
     return cutlass_symmetric_baddbmm(
@@ -206,7 +208,8 @@ def cutlass_symmetric_bmm(left: Tensor, right: Tensor) -> Tensor:
     )
 
 
-def cutlass_problem_is_square(left: Tensor, right: Tensor) -> bool:
+def cutlass_full_gemm_is_preferred(left: Tensor, right: Tensor) -> bool:
+    """Keep measured-faster rectangular products on the fallback backend."""
     return left.shape[-2] == left.shape[-1] and left.shape[-1] == right.shape[-1]
 
 
@@ -263,7 +266,9 @@ class CutlassBackend:
             )
 
     def matmul(self, left: Tensor, right: Tensor) -> Tensor:
-        if not self.is_candidate(left) or not cutlass_problem_is_square(left, right):
+        if not self.is_candidate(left) or not cutlass_full_gemm_is_preferred(
+            left, right
+        ):
             return self.fallback.matmul(left, right)
         try:
             return cutlass_bmm(left, right)
@@ -277,7 +282,9 @@ class CutlassBackend:
         accumulator: Tensor,
         beta: float,
     ) -> Tensor:
-        if not self.is_candidate(left) or not cutlass_problem_is_square(left, right):
+        if not self.is_candidate(left) or not cutlass_full_gemm_is_preferred(
+            left, right
+        ):
             return self.fallback.matmul_add(left, right, accumulator, beta)
         try:
             return cutlass_baddbmm(

@@ -17,7 +17,6 @@ from gram_newton_schulz_ampere.distributed_orthogonalization import (
 )
 from gram_newton_schulz_ampere.newton_schulz import (
     GramNewtonSchulz,
-    NewtonSchulz,
     StandardNewtonSchulz,
 )
 from gram_newton_schulz_ampere.optimizer_types import (
@@ -113,16 +112,26 @@ class Muon(Optimizer):
         self.state_prepopulation_enabled = True
 
     def configure_newton_schulz(self) -> None:
-        self.newton_schulz = self.build_newton_schulz(
-            ns_algorithm=self.ns_algorithm,
-            ns_epsilon=self.ns_epsilon,
-            ns_backend=self.ns_backend,
-            ns_coefficients=self.ns_coefficients,
-            gram_newton_schulz_reset_iterations=(
-                self.gram_newton_schulz_reset_iterations
-            ),
-            ns_compile=self.ns_compile,
-        )
+        if self.ns_algorithm == "gram_newton_schulz":
+            self.newton_schulz = GramNewtonSchulz(
+                ns_epsilon=self.ns_epsilon,
+                ns_backend=self.ns_backend,
+                ns_coefficients=self.ns_coefficients,
+                gram_newton_schulz_reset_iterations=(
+                    self.gram_newton_schulz_reset_iterations
+                ),
+                ns_compile=self.ns_compile,
+            )
+            return
+        if self.ns_algorithm == "standard_newton_schulz":
+            self.newton_schulz = StandardNewtonSchulz(
+                ns_epsilon=self.ns_epsilon,
+                ns_backend=self.ns_backend,
+                ns_coefficients=self.ns_coefficients,
+                ns_compile=self.ns_compile,
+            )
+            return
+        raise ValueError(f"Unknown Newton--Schulz algorithm: {self.ns_algorithm}")
 
     def load_state_dict(self, state_dict: StateDict) -> None:
         super().load_state_dict(state_dict)
@@ -351,34 +360,6 @@ class Muon(Optimizer):
             != torch.distributed.Backend.NCCL
         ):
             raise ValueError("Distributed Muon and Dion3 require an NCCL process group")
-
-    def build_newton_schulz(
-        self,
-        ns_algorithm: NewtonSchulzAlgorithm,
-        ns_epsilon: float,
-        ns_backend: NewtonSchulzBackend,
-        ns_coefficients: Coefficients,
-        gram_newton_schulz_reset_iterations: Sequence[int],
-        ns_compile: bool,
-    ) -> NewtonSchulz:
-        if ns_algorithm == "gram_newton_schulz":
-            return GramNewtonSchulz(
-                ns_epsilon=ns_epsilon,
-                ns_backend=ns_backend,
-                ns_coefficients=ns_coefficients,
-                gram_newton_schulz_reset_iterations=(
-                    gram_newton_schulz_reset_iterations
-                ),
-                ns_compile=ns_compile,
-            )
-        if ns_algorithm == "standard_newton_schulz":
-            return StandardNewtonSchulz(
-                ns_epsilon=ns_epsilon,
-                ns_backend=ns_backend,
-                ns_coefficients=ns_coefficients,
-                ns_compile=ns_compile,
-            )
-        raise ValueError(f"Unknown Newton--Schulz algorithm: {ns_algorithm}")
 
     def initialize_parameter_group_state(
         self,

@@ -228,7 +228,7 @@ def benchmark_batch(
     )
     torch.cuda.empty_cache()
 
-    matrix = torch.randn(
+    tall_input = torch.randn(
         batch_size,
         16384,
         2048,
@@ -236,8 +236,8 @@ def benchmark_batch(
         device="cuda",
         dtype=torch.float16,
     )
-    torch_gram_timing, torch_gram = time_operation(
-        lambda: matrix.mT @ matrix,
+    torch_gram_primitive_timing, torch_gram_reference = time_operation(
+        lambda: tall_input.mT @ tall_input,
         warmups,
         repeats,
     )
@@ -246,12 +246,12 @@ def benchmark_batch(
         "symmetric_gram",
         "torch",
         batch_size,
-        torch_gram_timing,
-        torch_gram,
-        torch_gram,
+        torch_gram_primitive_timing,
+        torch_gram_reference,
+        torch_gram_reference,
     )
-    symmetric_gram_timing, symmetric_gram = time_operation(
-        lambda: cutlass_symmetric_bmm(matrix.mT, matrix),
+    cutlass_gram_primitive_timing, cutlass_gram_primitive = time_operation(
+        lambda: cutlass_symmetric_bmm(tall_input.mT, tall_input),
         warmups,
         repeats,
     )
@@ -260,13 +260,16 @@ def benchmark_batch(
         "symmetric_gram",
         "cutlass_triangular",
         batch_size,
-        symmetric_gram_timing,
-        symmetric_gram,
-        torch_gram,
+        cutlass_gram_primitive_timing,
+        cutlass_gram_primitive,
+        torch_gram_reference,
     )
 
-    matrix = matrix / matrix.float().square().sum(dim=(-2, -1), keepdim=True).sqrt()
-    matrix = matrix.to(torch.float16)
+    core_input = (
+        tall_input / tall_input.float().square().sum(dim=(-2, -1), keepdim=True).sqrt()
+    )
+    core_input = core_input.to(torch.float16)
+    tall_input = torch.empty(0, device="cuda")
     torch_backend = TorchBackend()
     cutlass_backend = CutlassBackend(fallback=torch_backend)
     torch_operation = build_gram_newton_schulz_operation(
@@ -288,7 +291,7 @@ def benchmark_batch(
         normalize_input=False,
     )
     torch_core_timing, torch_core = time_operation(
-        lambda: torch_operation(matrix),
+        lambda: torch_operation(core_input),
         warmups,
         repeats,
     )
@@ -302,7 +305,7 @@ def benchmark_batch(
         torch_core,
     )
     cutlass_core_timing, cutlass_core = time_operation(
-        lambda: cutlass_operation(matrix),
+        lambda: cutlass_operation(core_input),
         warmups,
         repeats,
     )
@@ -316,7 +319,7 @@ def benchmark_batch(
         torch_core,
     )
     del torch_core, cutlass_core
-    matrix = torch.empty(0, device="cuda")
+    core_input = torch.empty(0, device="cuda")
     torch.cuda.empty_cache()
     input_generator = torch.Generator(device="cuda").manual_seed(67)
     benchmark_input = torch.randn(
@@ -327,20 +330,20 @@ def benchmark_batch(
         device="cuda",
         dtype=torch.bfloat16,
     )
-    standard_end_to_end = UpstreamStandardNewtonSchulz(
+    standard_operation = UpstreamStandardNewtonSchulz(
         ns_epsilon=1e-7,
         ns_use_kernels=False,
         ns_coefficients=YOU_COEFFICIENTS,
         compile_kwargs=None,
     )
-    torch_gram_end_to_end = GramNewtonSchulz(
+    torch_gram_operation = GramNewtonSchulz(
         ns_epsilon=1e-7,
         ns_backend="torch",
         ns_coefficients=YOU_COEFFICIENTS,
         gram_newton_schulz_reset_iterations=(2,),
         ns_compile=False,
     )
-    cutlass_gram_end_to_end = GramNewtonSchulz(
+    cutlass_gram_operation = GramNewtonSchulz(
         ns_epsilon=1e-7,
         ns_backend="cutlass",
         ns_coefficients=YOU_COEFFICIENTS,
@@ -348,12 +351,12 @@ def benchmark_batch(
         ns_compile=False,
     )
     standard_timing, standard_output = time_operation(
-        lambda: standard_end_to_end(benchmark_input),
+        lambda: standard_operation(benchmark_input),
         warmups,
         repeats,
     )
     torch_gram_timing, torch_gram_output = time_operation(
-        lambda: torch_gram_end_to_end(benchmark_input),
+        lambda: torch_gram_operation(benchmark_input),
         warmups,
         repeats,
     )
@@ -376,7 +379,7 @@ def benchmark_batch(
         torch_gram_output,
     )
     cutlass_gram_timing, cutlass_gram_output = time_operation(
-        lambda: cutlass_gram_end_to_end(benchmark_input),
+        lambda: cutlass_gram_operation(benchmark_input),
         warmups,
         repeats,
     )

@@ -67,10 +67,10 @@ shared memory.
 
 Exact PTX, SASS, and resource dumps are stored as:
 
-- `modal/symmetric-cutlass-{perf_job}.ptx`
-- `modal/symmetric-cutlass-{perf_job}.sass`
-- `modal/symmetric-cutlass-{perf_job}.resources.txt`
-- `modal/symmetric-cutlass-{perf_job}.elf-list.txt`
+- `modal/symmetric-cutlass-2241410.ptx`
+- `modal/symmetric-cutlass-2241410.sass`
+- `modal/symmetric-cutlass-2241410.resources.txt`
+- `modal/symmetric-cutlass-2241410.elf-list.txt`
 
 ## Algorithmic work
 
@@ -81,9 +81,9 @@ more efficient symmetric execution, not only fewer FLOPs.
 
 ## Provenance and cross-run context
 
-- Final implementation: working tree based on local HEAD `{local_head}`; the CUTLASS changes are uncommitted.
-- Final C++ SHA-256: `{source_hashes[str(cutlass_cu_path.relative_to(root))]}`.
-- Final Python wrapper SHA-256: `{source_hashes[str(cutlass_path.relative_to(root))]}`.
+- Baseline implementation commit: `fbf6f5d`.
+- Final C++ SHA-256: `317455dec2adc1274ff766c1d581be6840e4ad3bcc6b56c0eff386a305eaaec1`.
+- Final Python wrapper SHA-256: `6380ef116960632c57688a14f0af5d182daa5a9eef688f14ace4d29feaacb1ad`.
 - Turing: A100-SXM4-80GB, driver 595.71.05, Torch 2.11.0+cu130, CUDA runtime 13.0.
 - Historical Modal A100 measured the older fastest GNS backend at `1.583x`, `1.729x`, and `1.765x`
   for B1/B8/B32. This is context only because the code, process, and machine run differ.
@@ -92,5 +92,25 @@ more efficient symmetric execution, not only fewer FLOPs.
 - The current Turing run did not sample peak memory. The historical Modal B32 runs stayed below
   roughly 25 GiB reserved memory, which is cross-run context only.
 
-Raw final data: `modal/symmetric-cutlass-results-{perf_job}.json` and
-`modal/symmetric-cutlass-summary-{perf_job}.csv`.
+Raw final data: `modal/symmetric-cutlass-results-2241410.json` and
+`modal/symmetric-cutlass-summary-2241410.csv`.
+
+## Refactor branch regression
+
+Cleanup branch `refactor/ampere-symmetric-cutlass-cleanup` was measured by Turing
+job `2241582` against baseline commit `fbf6f5d` / job `2241410`.
+
+| B | Baseline CUTLASS GNS (ms) | Cleanup CUTLASS GNS (ms) | Change | Cleanup Standard / CUTLASS |
+|---:|---:|---:|---:|---:|
+| 1 | 3.626 | 3.635 | +0.24% | 1.952x |
+| 8 | 24.418 | 24.414 | -0.02% | 2.158x |
+| 32 | 96.086 | 96.037 | -0.05% | 2.340x |
+
+All triangular primitive, core, and end-to-end timing changes stayed within
+`0.95%`; core changes stayed within `0.11%`. Finite outputs, RMS,
+orthogonality, and exact symmetry passed. The largest relative-error reporting
+difference was `3.5e-10`, caused by the memory-bounded batch-wise norm.
+
+The refactored CUDA extension remains `802,192` bytes. Its complete SASS and
+resource-usage dumps are byte-identical to baseline job `2241410`, confirming
+that the mathematical grid helper and naming cleanup did not alter device code.

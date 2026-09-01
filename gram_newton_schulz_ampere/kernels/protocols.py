@@ -34,7 +34,9 @@ class CutlassJitModule(Protocol):
 
 
 class MatrixBackend(Protocol):
-    def symmetric_matmul(self, left: Tensor, right: Tensor) -> Tensor: ...
+    def symmetric_matmul(self, left: Tensor, right: Tensor) -> Tensor:
+        """Multiply matrices whose product is guaranteed symmetric by the caller."""
+        ...
 
     def symmetric_batch_matrix_matrix_product(
         self,
@@ -43,7 +45,12 @@ class MatrixBackend(Protocol):
         accumulator: Tensor,
         alpha: float = 1.0,
         beta: float = 1.0,
-    ) -> Tensor: ...
+    ) -> Tensor:
+        """Return ``alpha * left @ right + beta * accumulator``.
+
+        The caller guarantees that this result is symmetric.
+        """
+        ...
 
     def matmul(self, left: Tensor, right: Tensor) -> Tensor: ...
 

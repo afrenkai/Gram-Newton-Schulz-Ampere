@@ -15,22 +15,28 @@ namespace gram_newton_schulz_ampere {
 using RowMajor = cutlass::layout::RowMajor;
 using ColumnMajor = cutlass::layout::ColumnMajor;
 
+CUTLASS_HOST_DEVICE
+dim3 symmetric_grid_shape(int tile_count, int batch_count) {
+  int const grid_columns = (tile_count & 1) ? tile_count : tile_count + 1;
+  int const grid_rows = tile_count / 2 + tile_count % 2;
+  return dim3(grid_columns, grid_rows, batch_count);
+}
+
 CUTLASS_DEVICE
 cutlass::MatrixCoord symmetric_tile_pair() {
-  int const physical_column =
-      cutlass::gemm::threadblock::RematerializeBlockIdxX();
-  int const circular_distance =
+  int const cycle_start = cutlass::gemm::threadblock::RematerializeBlockIdxX();
+  int const cycle_distance =
       cutlass::gemm::threadblock::RematerializeBlockIdxY();
   bool const odd_tile_count =
       static_cast<int>(gridDim.x) == 2 * static_cast<int>(gridDim.y) - 1;
   int const tile_count = odd_tile_count ? static_cast<int>(gridDim.x)
                                         : static_cast<int>(gridDim.x) - 1;
 
-  int first_tile = physical_column;
-  int second_tile = physical_column + circular_distance;
-  if (physical_column == tile_count) {
-    first_tile = circular_distance;
-    second_tile = circular_distance + tile_count / 2;
+  int first_tile = cycle_start;
+  int second_tile = cycle_start + cycle_distance;
+  if (cycle_start == tile_count) {
+    first_tile = cycle_distance;
+    second_tile = cycle_distance + tile_count / 2;
   } else if (second_tile >= tile_count) {
     second_tile -= tile_count;
   }
@@ -53,10 +59,7 @@ struct SymmetricBatchedThreadblockSwizzle {
 
   CUTLASS_HOST_DEVICE
   static dim3 get_grid_shape(cutlass::gemm::GemmCoord tiled_shape) {
-    int const tile_count = tiled_shape.m();
-    int const grid_columns = (tile_count & 1) ? tile_count : tile_count + 1;
-    int const grid_rows = tile_count / 2 + tile_count % 2;
-    return dim3(grid_columns, grid_rows, tiled_shape.k());
+    return symmetric_grid_shape(tiled_shape.m(), tiled_shape.k());
   }
 
   CUTLASS_HOST_DEVICE
@@ -127,16 +130,16 @@ __global__ void mirror_lower_triangle(Element *output, int matrix_size,
   constexpr int tile_size = 32;
   __shared__ Element tile[tile_size][tile_size + 1];
 
-  cutlass::MatrixCoord const tile_pair = symmetric_tile_pair();
-  int const row_tile = tile_pair.column();
-  int const column_tile = tile_pair.row();
+  cutlass::MatrixCoord const upper_tile = symmetric_tile_pair();
+  int const lower_row_tile = upper_tile.column();
+  int const lower_column_tile = upper_tile.row();
   int const thread_column = static_cast<int>(threadIdx.x);
   int64_t const batch_offset = static_cast<int64_t>(blockIdx.z) * batch_stride;
 
   for (int thread_row = static_cast<int>(threadIdx.y); thread_row < tile_size;
        thread_row += static_cast<int>(blockDim.y)) {
-    int const source_row = column_tile * tile_size + thread_row;
-    int const source_column = row_tile * tile_size + thread_column;
+    int const source_row = upper_tile.row() * tile_size + thread_row;
+    int const source_column = upper_tile.column() * tile_size + thread_column;
     if (source_row < matrix_size && source_column < matrix_size) {
       tile[thread_row][thread_column] =
           output[batch_offset + static_cast<int64_t>(source_row) * matrix_size +
@@ -147,10 +150,11 @@ __global__ void mirror_lower_triangle(Element *output, int matrix_size,
 
   for (int thread_row = static_cast<int>(threadIdx.y); thread_row < tile_size;
        thread_row += static_cast<int>(blockDim.y)) {
-    int const destination_row = row_tile * tile_size + thread_row;
-    int const destination_column = column_tile * tile_size + thread_column;
+    int const destination_row = lower_row_tile * tile_size + thread_row;
+    int const destination_column =
+        lower_column_tile * tile_size + thread_column;
     bool const is_lower_entry =
-        row_tile > column_tile || thread_row > thread_column;
+        lower_row_tile > lower_column_tile || thread_row > thread_column;
     if (is_lower_entry && destination_row < matrix_size &&
         destination_column < matrix_size) {
       output[batch_offset +
@@ -210,10 +214,7 @@ void launch_symmetric_baddbmm(TensorView accumulator, TensorView left,
 
   constexpr int mirror_tile_size = 32;
   int const mirror_tiles = (rows + mirror_tile_size - 1) / mirror_tile_size;
-  int const mirror_grid_columns =
-      (mirror_tiles & 1) ? mirror_tiles : mirror_tiles + 1;
-  int const mirror_grid_rows = mirror_tiles / 2 + mirror_tiles % 2;
-  dim3 const mirror_grid(mirror_grid_columns, mirror_grid_rows, batch_count);
+  dim3 const mirror_grid = symmetric_grid_shape(mirror_tiles, batch_count);
   dim3 const mirror_block(mirror_tile_size, 8);
   mirror_lower_triangle<Element><<<mirror_grid, mirror_block, 0, stream>>>(
       reinterpret_cast<Element *>(output.data_ptr()), rows, output.stride(0));
@@ -222,41 +223,41 @@ void launch_symmetric_baddbmm(TensorView accumulator, TensorView left,
 }
 
 template <typename Element, typename LayoutB>
-void dispatch_strat(TensorView accumulator, TensorView left, TensorView right,
-                    TensorView output, double alpha, double beta, int64_t strat,
-                    cudaStream_t stream) {
-  if (strat == 0) {
+void dispatch_tactic(TensorView accumulator, TensorView left, TensorView right,
+                     TensorView output, double alpha, double beta,
+                     int64_t tactic, cudaStream_t stream) {
+  if (tactic == 0) {
     launch_baddbmm<Element, LayoutB, cutlass::gemm::GemmShape<128, 128, 32>,
                    cutlass::gemm::GemmShape<64, 64, 32>>(
         accumulator, left, right, output, alpha, beta, stream);
     return;
   }
-  if (strat == 1) {
+  if (tactic == 1) {
     launch_baddbmm<Element, LayoutB, cutlass::gemm::GemmShape<64, 64, 32>,
                    cutlass::gemm::GemmShape<32, 32, 32>>(
         accumulator, left, right, output, alpha, beta, stream);
     return;
   }
-  if (strat == 2) {
+  if (tactic == 2) {
     launch_baddbmm<Element, LayoutB, cutlass::gemm::GemmShape<64, 128, 32>,
                    cutlass::gemm::GemmShape<32, 64, 32>>(
         accumulator, left, right, output, alpha, beta, stream);
     return;
   }
-  TVM_FFI_LOG_AND_THROW(ValueError) << "CUTLASS strat has to be 0, 1, or 2";
+  TVM_FFI_LOG_AND_THROW(ValueError) << "CUTLASS tactic has to be 0, 1, or 2";
 }
 
 template <typename Element>
 void dispatch_layout(TensorView accumulator, TensorView left, TensorView right,
                      TensorView output, double alpha, double beta,
-                     int64_t strat, bool right_column_major,
+                     int64_t tactic, bool right_column_major,
                      cudaStream_t stream) {
   if (right_column_major) {
-    dispatch_strat<Element, ColumnMajor>(accumulator, left, right, output,
-                                         alpha, beta, strat, stream);
+    dispatch_tactic<Element, ColumnMajor>(accumulator, left, right, output,
+                                          alpha, beta, tactic, stream);
   } else {
-    dispatch_strat<Element, RowMajor>(accumulator, left, right, output, alpha,
-                                      beta, strat, stream);
+    dispatch_tactic<Element, RowMajor>(accumulator, left, right, output, alpha,
+                                       beta, tactic, stream);
   }
 }
 
@@ -319,7 +320,7 @@ inline void check_matrix_layout(TensorView tensor, bool column_major) {
 
 void cutlass_baddbmm(TensorView accumulator, TensorView left, TensorView right,
                      TensorView output, double alpha, double beta,
-                     int64_t strat, bool right_column_major) {
+                     int64_t tactic, bool right_column_major) {
   check_baddbmm_tensors(accumulator, left, right, output);
   CHECK_CONTIGUOUS(left);
   check_matrix_layout(right, right_column_major);
@@ -329,12 +330,12 @@ void cutlass_baddbmm(TensorView accumulator, TensorView left, TensorView right,
   switch (encode_dlpack_dtype(left.dtype())) {
   case float16_code:
     dispatch_layout<cutlass::half_t>(accumulator, left, right, output, alpha,
-                                     beta, strat, right_column_major, stream);
+                                     beta, tactic, right_column_major, stream);
     return;
   case bfloat16_code:
     dispatch_layout<cutlass::bfloat16_t>(accumulator, left, right, output,
-                                         alpha, beta, strat, right_column_major,
-                                         stream);
+                                         alpha, beta, tactic,
+                                         right_column_major, stream);
     return;
   default:
     TVM_FFI_LOG_AND_THROW(TypeError)
