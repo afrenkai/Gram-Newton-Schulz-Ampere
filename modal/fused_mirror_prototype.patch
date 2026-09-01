@@ -1,0 +1,350 @@
+diff --git a/gram_newton_schulz_ampere/kernels/cutlass_ns.cu b/gram_newton_schulz_ampere/kernels/cutlass_ns.cu
+index 460d82c..518c9ca 100644
+--- a/gram_newton_schulz_ampere/kernels/cutlass_ns.cu
++++ b/gram_newton_schulz_ampere/kernels/cutlass_ns.cu
+@@ -78,6 +78,133 @@ struct SymmetricBatchedThreadblockSwizzle {
+   }
+ };
+
++template <typename BaseKernel, typename Element>
++struct FusedMirrorEpilogueKernel : BaseKernel {
++  using Params = typename BaseKernel::Params;
++  using SharedStorage = typename BaseKernel::SharedStorage;
++  using ThreadblockSwizzle = typename BaseKernel::ThreadblockSwizzle;
++
++  CUTLASS_DEVICE
++  void operator()(Params const &params, SharedStorage &shared_storage) {
++    BaseKernel::operator()(params, shared_storage);
++    __syncthreads();
++
++    ThreadblockSwizzle threadblock_swizzle;
++    cutlass::gemm::GemmCoord const tile_offset =
++        threadblock_swizzle.get_tile_offset(params.swizzle_log_tile);
++    int const tile_rows = BaseKernel::Mma::Shape::kM;
++    int const tile_columns = BaseKernel::Mma::Shape::kN;
++    int const source_row_start = tile_offset.m() * tile_rows;
++    int const source_column_start = tile_offset.n() * tile_columns;
++    int const destination_row_start = source_column_start;
++    int const destination_column_start = source_row_start;
++
++    for (int batch_index = threadblock_swizzle.get_batch_idx();
++         batch_index < params.batch_count; batch_index += gridDim.z) {
++      int64_t const batch_offset =
++          static_cast<int64_t>(batch_index) * params.stride_D;
++      for (int destination_linear = static_cast<int>(threadIdx.x);
++           destination_linear < tile_rows * tile_columns;
++           destination_linear += static_cast<int>(blockDim.x)) {
++        int const destination_local_row = destination_linear / tile_columns;
++        int const destination_local_column = destination_linear % tile_columns;
++        bool const is_strict_lower =
++            tile_offset.m() < tile_offset.n() ||
++            destination_local_row > destination_local_column;
++        int const source_row = source_row_start + destination_local_column;
++        int const source_column = source_column_start + destination_local_row;
++        int const destination_row =
++            destination_row_start + destination_local_row;
++        int const destination_column =
++            destination_column_start + destination_local_column;
++        if (is_strict_lower && source_row < params.problem_size.m() &&
++            source_column < params.problem_size.n() &&
++            destination_row < params.problem_size.m() &&
++            destination_column < params.problem_size.n()) {
++          Element *output =
++              reinterpret_cast<Element *>(params.ref_D.data()) + batch_offset;
++          output[static_cast<int64_t>(destination_row) *
++                     params.problem_size.n() +
++                 destination_column] = output[static_cast<int64_t>(source_row) *
++                                                  params.problem_size.n() +
++                                              source_column];
++        }
++      }
++    }
++  }
++};
++
++template <typename BaseOperation, typename Element>
++class FusedMirrorGemmBatched {
++public:
++  using Arguments = typename BaseOperation::Arguments;
++  using BaseKernel = typename BaseOperation::GemmKernel;
++  using GemmKernel = FusedMirrorEpilogueKernel<BaseKernel, Element>;
++  using ThreadblockShape = typename BaseOperation::ThreadblockShape;
++  using ThreadblockSwizzle = typename BaseOperation::ThreadblockSwizzle;
++
++private:
++  typename GemmKernel::Params params_;
++
++public:
++  static cutlass::Status can_implement(Arguments const &arguments) {
++    return BaseOperation::can_implement(arguments);
++  }
++
++  cutlass::Status initialize(Arguments const &arguments) {
++    ThreadblockSwizzle threadblock_swizzle;
++    cutlass::gemm::GemmCoord const grid_shape =
++        threadblock_swizzle.get_tiled_shape(
++            arguments.problem_size,
++            {ThreadblockShape::kM, ThreadblockShape::kN, ThreadblockShape::kK},
++            arguments.batch_count);
++    params_ = typename GemmKernel::Params{arguments.problem_size,
++                                          grid_shape,
++                                          arguments.ref_A.non_const_ref(),
++                                          arguments.stride_A,
++                                          arguments.ref_B.non_const_ref(),
++                                          arguments.stride_B,
++                                          arguments.ref_C.non_const_ref(),
++                                          arguments.stride_C,
++                                          arguments.ref_D,
++                                          arguments.stride_D,
++                                          arguments.epilogue,
++                                          arguments.batch_count};
++    return cutlass::Status::kSuccess;
++  }
++
++  cutlass::Status run(cudaStream_t stream) {
++    ThreadblockSwizzle threadblock_swizzle;
++    dim3 const grid =
++        threadblock_swizzle.get_grid_shape(params_.grid_tiled_shape);
++    dim3 const block(GemmKernel::kThreadCount, 1, 1);
++    int const shared_memory_size =
++        static_cast<int>(sizeof(typename GemmKernel::SharedStorage));
++    if (shared_memory_size >= (48 << 10)) {
++      cudaError_t const attribute_status = cudaFuncSetAttribute(
++          cutlass::Kernel<GemmKernel>,
++          cudaFuncAttributeMaxDynamicSharedMemorySize, shared_memory_size);
++      if (attribute_status != cudaSuccess) {
++        return cutlass::Status::kErrorInternal;
++      }
++    }
++    cutlass::arch::synclog_setup();
++    cutlass::Kernel<GemmKernel>
++        <<<grid, block, shared_memory_size, stream>>>(params_);
++    return cudaGetLastError() == cudaSuccess ? cutlass::Status::kSuccess
++                                             : cutlass::Status::kErrorInternal;
++  }
++
++  cutlass::Status operator()(Arguments const &arguments, void *,
++                             cudaStream_t stream) {
++    cutlass::Status const initialize_status = initialize(arguments);
++    if (initialize_status != cutlass::Status::kSuccess) {
++      return initialize_status;
++    }
++    return run(stream);
++  }
++};
++
+ template <typename Element, typename LayoutB, typename ThreadblockShape,
+           typename WarpShape>
+ void launch_baddbmm(TensorView accumulator, TensorView left, TensorView right,
+@@ -164,7 +291,8 @@ __global__ void mirror_lower_triangle(Element *output, int matrix_size,
+   }
+ }
+
+-template <typename Element, typename LayoutA, typename LayoutB>
++template <bool FusedMirror, typename Element, typename LayoutA,
++          typename LayoutB>
+ void launch_symmetric_baddbmm(TensorView accumulator, TensorView left,
+                               TensorView right, TensorView output, double alpha,
+                               double beta, cudaStream_t stream) {
+@@ -173,11 +301,15 @@ void launch_symmetric_baddbmm(TensorView accumulator, TensorView left,
+   using WarpShape = cutlass::gemm::GemmShape<64, 64, 32>;
+   using Epilogue = cutlass::epilogue::thread::LinearCombination<
+       Element, 128 / cutlass::sizeof_bits<Element>::value, float, float>;
+-  using Operation = cutlass::gemm::device::GemmBatched<
++  using BaseOperation = cutlass::gemm::device::GemmBatched<
+       Element, LayoutA, Element, LayoutB, Element, RowMajor, float,
+       cutlass::arch::OpClassTensorOp, cutlass::arch::Sm80, ThreadblockShape,
+       WarpShape, InstructionShape, Epilogue, SymmetricBatchedThreadblockSwizzle,
+       3, 8, 8>;
++  using Operation =
++      std::conditional_t<FusedMirror,
++                         FusedMirrorGemmBatched<BaseOperation, Element>,
++                         BaseOperation>;
+
+   int const batch_count = static_cast<int>(left.size(0));
+   int const rows = static_cast<int>(left.size(1));
+@@ -212,14 +344,16 @@ void launch_symmetric_baddbmm(TensorView accumulator, TensorView left,
+       << "Symmetric CUTLASS SM80 baddbmm launch failed: "
+       << static_cast<int>(launch_status);
+
+-  constexpr int mirror_tile_size = 32;
+-  int const mirror_tiles = (rows + mirror_tile_size - 1) / mirror_tile_size;
+-  dim3 const mirror_grid = symmetric_grid_shape(mirror_tiles, batch_count);
+-  dim3 const mirror_block(mirror_tile_size, 8);
+-  mirror_lower_triangle<Element><<<mirror_grid, mirror_block, 0, stream>>>(
+-      reinterpret_cast<Element *>(output.data_ptr()), rows, output.stride(0));
+-  TVM_FFI_ICHECK(cudaGetLastError() == cudaSuccess)
+-      << "Symmetric CUTLASS SM80 mirror launch failed";
++  if constexpr (!FusedMirror) {
++    constexpr int mirror_tile_size = 32;
++    int const mirror_tiles = (rows + mirror_tile_size - 1) / mirror_tile_size;
++    dim3 const mirror_grid = symmetric_grid_shape(mirror_tiles, batch_count);
++    dim3 const mirror_block(mirror_tile_size, 8);
++    mirror_lower_triangle<Element><<<mirror_grid, mirror_block, 0, stream>>>(
++        reinterpret_cast<Element *>(output.data_ptr()), rows, output.stride(0));
++    TVM_FFI_ICHECK(cudaGetLastError() == cudaSuccess)
++        << "Symmetric CUTLASS SM80 mirror launch failed";
++  }
+ }
+
+ template <typename Element, typename LayoutB>
+@@ -261,23 +395,23 @@ void dispatch_layout(TensorView accumulator, TensorView left, TensorView right,
+   }
+ }
+
+-template <typename Element>
++template <bool FusedMirror, typename Element>
+ void dispatch_symmetric_layout(TensorView accumulator, TensorView left,
+                                TensorView right, TensorView output,
+                                double alpha, double beta,
+                                bool left_column_major, bool right_column_major,
+                                cudaStream_t stream) {
+   if (left_column_major) {
+-    launch_symmetric_baddbmm<Element, ColumnMajor, RowMajor>(
++    launch_symmetric_baddbmm<FusedMirror, Element, ColumnMajor, RowMajor>(
+         accumulator, left, right, output, alpha, beta, stream);
+     return;
+   }
+   if (right_column_major) {
+-    launch_symmetric_baddbmm<Element, RowMajor, ColumnMajor>(
++    launch_symmetric_baddbmm<FusedMirror, Element, RowMajor, ColumnMajor>(
+         accumulator, left, right, output, alpha, beta, stream);
+     return;
+   }
+-  launch_symmetric_baddbmm<Element, RowMajor, RowMajor>(
++  launch_symmetric_baddbmm<FusedMirror, Element, RowMajor, RowMajor>(
+       accumulator, left, right, output, alpha, beta, stream);
+ }
+
+@@ -344,11 +478,13 @@ void cutlass_baddbmm(TensorView accumulator, TensorView left, TensorView right,
+   }
+ }
+
+-void cutlass_symmetric_baddbmm(TensorView accumulator, TensorView left,
+-                               TensorView right, TensorView output,
+-                               double alpha, double beta,
+-                               bool left_column_major,
+-                               bool right_column_major) {
++template <bool FusedMirror>
++void cutlass_symmetric_baddbmm_implementation(TensorView accumulator,
++                                              TensorView left, TensorView right,
++                                              TensorView output, double alpha,
++                                              double beta,
++                                              bool left_column_major,
++                                              bool right_column_major) {
+   check_baddbmm_tensors(accumulator, left, right, output);
+   TVM_FFI_ICHECK_EQ(accumulator.size(1), accumulator.size(2));
+   TVM_FFI_ICHECK(!(left_column_major && right_column_major));
+@@ -359,12 +495,12 @@ void cutlass_symmetric_baddbmm(TensorView accumulator, TensorView left,
+   cudaStream_t const stream = get_stream(left.device());
+   switch (encode_dlpack_dtype(left.dtype())) {
+   case float16_code:
+-    dispatch_symmetric_layout<cutlass::half_t>(accumulator, left, right, output,
+-                                               alpha, beta, left_column_major,
+-                                               right_column_major, stream);
++    dispatch_symmetric_layout<FusedMirror, cutlass::half_t>(
++        accumulator, left, right, output, alpha, beta, left_column_major,
++        right_column_major, stream);
+     return;
+   case bfloat16_code:
+-    dispatch_symmetric_layout<cutlass::bfloat16_t>(
++    dispatch_symmetric_layout<FusedMirror, cutlass::bfloat16_t>(
+         accumulator, left, right, output, alpha, beta, left_column_major,
+         right_column_major, stream);
+     return;
+@@ -375,6 +511,26 @@ void cutlass_symmetric_baddbmm(TensorView accumulator, TensorView left,
+   }
+ }
+
++void cutlass_symmetric_baddbmm(TensorView accumulator, TensorView left,
++                               TensorView right, TensorView output,
++                               double alpha, double beta,
++                               bool left_column_major,
++                               bool right_column_major) {
++  cutlass_symmetric_baddbmm_implementation<false>(
++      accumulator, left, right, output, alpha, beta, left_column_major,
++      right_column_major);
++}
++
++void cutlass_symmetric_baddbmm_fused_mirror(TensorView accumulator,
++                                            TensorView left, TensorView right,
++                                            TensorView output, double alpha,
++                                            double beta, bool left_column_major,
++                                            bool right_column_major) {
++  cutlass_symmetric_baddbmm_implementation<true>(
++      accumulator, left, right, output, alpha, beta, left_column_major,
++      right_column_major);
++}
++
+ } // namespace gram_newton_schulz_ampere
+
+ TVM_FFI_DLL_EXPORT_TYPED_FUNC(cutlass_baddbmm,
+@@ -382,3 +538,6 @@ TVM_FFI_DLL_EXPORT_TYPED_FUNC(cutlass_baddbmm,
+ TVM_FFI_DLL_EXPORT_TYPED_FUNC(
+     cutlass_symmetric_baddbmm,
+     gram_newton_schulz_ampere::cutlass_symmetric_baddbmm);
++TVM_FFI_DLL_EXPORT_TYPED_FUNC(
++    cutlass_symmetric_baddbmm_fused_mirror,
++    gram_newton_schulz_ampere::cutlass_symmetric_baddbmm_fused_mirror);
+diff --git a/gram_newton_schulz_ampere/kernels/cutlass_ns.py b/gram_newton_schulz_ampere/kernels/cutlass_ns.py
+index bd471d6..c926d47 100644
+--- a/gram_newton_schulz_ampere/kernels/cutlass_ns.py
++++ b/gram_newton_schulz_ampere/kernels/cutlass_ns.py
+@@ -195,6 +195,34 @@ def cutlass_symmetric_baddbmm(
+     return output
+
+
++def cutlass_symmetric_baddbmm_fused_mirror(
++    accumulator: Tensor,
++    left: Tensor,
++    right: Tensor,
++    *,
++    alpha: float = 1.0,
++    beta: float = 1.0,
++) -> Tensor:
++    """Run the experimental same-CTA mirror after the CUTLASS epilogue."""
++    if not cutlass_symmetric_supports(accumulator, left, right):
++        raise ValueError(
++            "Tensor shape, layout, dtype, or device is unsupported by symmetric "
++            "SM80 CUTLASS"
++        )
++    output = torch.empty_like(accumulator)
++    load_cutlass_module().cutlass_symmetric_baddbmm_fused_mirror(
++        accumulator,
++        left,
++        right,
++        output,
++        alpha,
++        beta,
++        cutlass_is_column_major(left),
++        cutlass_is_column_major(right),
++    )
++    return output
++
++
+ def cutlass_symmetric_bmm(left: Tensor, right: Tensor) -> Tensor:
+     """Multiply matrices whose product is guaranteed symmetric by the caller."""
+     output_shape = (*left.shape[:-2], left.shape[-2], right.shape[-1])
+diff --git a/gram_newton_schulz_ampere/kernels/protocols.py b/gram_newton_schulz_ampere/kernels/protocols.py
+index 063c6cf..5faac88 100644
+--- a/gram_newton_schulz_ampere/kernels/protocols.py
++++ b/gram_newton_schulz_ampere/kernels/protocols.py
+@@ -32,6 +32,18 @@ class CutlassJitModule(Protocol):
+         right_column_major: bool,
+     ) -> None: ...
+
++    def cutlass_symmetric_baddbmm_fused_mirror(
++        self,
++        accumulator: Tensor,
++        left: Tensor,
++        right: Tensor,
++        output: Tensor,
++        alpha: float,
++        beta: float,
++        left_column_major: bool,
++        right_column_major: bool,
++    ) -> None: ...
++
+
+ class MatrixBackend(Protocol):
+     def symmetric_matmul(self, left: Tensor, right: Tensor) -> Tensor:

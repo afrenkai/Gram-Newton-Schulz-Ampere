@@ -1,0 +1,85 @@
+{
+  "python": "3.13.6 (main, Aug 14 2025, 16:23:12) [Clang 20.1.4 ]",
+  "records": [
+    {
+      "kind": "cold_cache",
+      "variant": "separate",
+      "device": "NVIDIA A100-SXM4-80GB",
+      "compute_capability": [
+        8,
+        0
+      ],
+      "dimension": 2048,
+      "inner_dimension": 16384,
+      "first_call_ms": 23967.746033798903,
+      "warm_median_ms": 0.5048320293426514,
+      "cache_file_count": 7,
+      "cache_bytes": 1866827,
+      "finite": true,
+      "trial": 0,
+      "process_wall_ms": 26870.631380937994,
+      "cache_path": "/scratch/afrenk/gns-ampere-email-benchmark/cold-cache-2241771/cold-0",
+      "stderr": ""
+    },
+    {
+      "kind": "cold_cache",
+      "variant": "separate",
+      "device": "NVIDIA A100-SXM4-80GB",
+      "compute_capability": [
+        8,
+        0
+      ],
+      "dimension": 2048,
+      "inner_dimension": 16384,
+      "first_call_ms": 23988.130933139473,
+      "warm_median_ms": 0.502784013748169,
+      "cache_file_count": 7,
+      "cache_bytes": 1866827,
+      "finite": true,
+      "trial": 1,
+      "process_wall_ms": 26896.357868798077,
+      "cache_path": "/scratch/afrenk/gns-ampere-email-benchmark/cold-cache-2241771/cold-1",
+      "stderr": ""
+    },
+    {
+      "kind": "warm_process_cache",
+      "variant": "separate",
+      "device": "NVIDIA A100-SXM4-80GB",
+      "compute_capability": [
+        8,
+        0
+      ],
+      "dimension": 2048,
+      "inner_dimension": 16384,
+      "first_call_ms": 24.743367917835712,
+      "warm_median_ms": 0.5017600059509277,
+      "cache_file_count": 7,
+      "cache_bytes": 1866827,
+      "finite": true,
+      "trial": 0,
+      "process_wall_ms": 3115.321231074631,
+      "cache_path": "/scratch/afrenk/gns-ampere-email-benchmark/cold-cache-2241771/cold-0",
+      "stderr": ""
+    },
+    {
+      "kind": "warm_process_cache",
+      "variant": "separate",
+      "device": "NVIDIA A100-SXM4-80GB",
+      "compute_capability": [
+        8,
+        0
+      ],
+      "dimension": 2048,
+      "inner_dimension": 16384,
+      "first_call_ms": 23.414670024067163,
+      "warm_median_ms": 0.502784013748169,
+      "cache_file_count": 7,
+      "cache_bytes": 1866827,
+      "finite": true,
+      "trial": 1,
+      "process_wall_ms": 3044.500121846795,
+      "cache_path": "/scratch/afrenk/gns-ampere-email-benchmark/cold-cache-2241771/cold-0",
+      "stderr": ""
+    }
+  ]
+}

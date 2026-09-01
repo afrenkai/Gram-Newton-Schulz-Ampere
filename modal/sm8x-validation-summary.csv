@@ -1,0 +1,4 @@
+device,compute_capability,provider,run,prototype_present,test_cases,passed,failed,elapsed_seconds
+NVIDIA A100-SXM4-80GB,SM80,WPI Turing Slurm,2241751,1,28,28,0,3.0
+NVIDIA A10,SM86,Modal,ap-Ajaf693bTkmnVZvPoeyrTt,1,28,28,0,42.85
+NVIDIA A100-SXM4-80GB,SM80,WPI Turing Slurm,2241769,0,25,25,0,32.19
