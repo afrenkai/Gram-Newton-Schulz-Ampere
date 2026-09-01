@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # ruff: noqa: F722
 import argparse
 import json
