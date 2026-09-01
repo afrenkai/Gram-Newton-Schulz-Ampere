@@ -20,6 +20,18 @@ class CutlassJitModule(Protocol):
         right_column_major: bool,
     ) -> None: ...
 
+    def cutlass_symmetric_baddbmm(
+        self,
+        accumulator: Tensor,
+        left: Tensor,
+        right: Tensor,
+        output: Tensor,
+        alpha: float,
+        beta: float,
+        left_column_major: bool,
+        right_column_major: bool,
+    ) -> None: ...
+
 
 class MatrixBackend(Protocol):
     def symmetric_matmul(self, left: Tensor, right: Tensor) -> Tensor: ...

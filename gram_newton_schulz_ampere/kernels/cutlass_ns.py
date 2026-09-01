@@ -19,7 +19,6 @@ except ImportError:
     gen_jit_spec: Callable[..., object] | None = None
 
 
-
 @cache
 def load_cutlass_module() -> CutlassJitModule:
     if gen_jit_spec is None:
@@ -47,43 +46,63 @@ def cutlass_is_installed() -> bool:
     return gen_jit_spec is not None
 
 
+def cutlass_is_column_major(tensor: Tensor) -> bool:
+    return tensor.stride(-2) == 1 and tensor.stride(-1) == tensor.shape[-2]
+
+
+def cutlass_has_supported_layout(tensor: Tensor) -> bool:
+    return tensor.is_contiguous() or cutlass_is_column_major(tensor)
+
+
+def cutlass_supports_problem(
+    accumulator: Tensor,
+    left: Tensor,
+    right: Tensor,
+) -> bool:
+    return (
+        left.is_cuda
+        and torch.cuda.get_device_capability(left.device)[0] == 8
+        and left.dtype in {torch.float16, torch.bfloat16}
+        and accumulator.dtype == left.dtype == right.dtype
+        and accumulator.device == left.device == right.device
+        and accumulator.ndim == left.ndim == right.ndim == 3
+        and left.shape[0] == right.shape[0] == accumulator.shape[0]
+        and left.shape[2] == right.shape[1]
+        and left.shape[1] == accumulator.shape[1]
+        and right.shape[2] == accumulator.shape[2]
+        and accumulator.is_contiguous()
+        and left.shape[2] % 8 == 0
+        and right.shape[2] % 8 == 0
+        and not (
+            accumulator.data_ptr() % 16 or left.data_ptr() % 16 or right.data_ptr() % 16
+        )
+        and not (accumulator.stride(0) % 8 or left.stride(0) % 8 or right.stride(0) % 8)
+    )
+
+
 def cutlass_supports(
     accumulator: Tensor,
     left: Tensor,
     right: Tensor,
 ) -> bool:
-    if not left.is_cuda or torch.cuda.get_device_capability(left.device)[0] != 8:
-        return False
-    if left.dtype not in {torch.float16, torch.bfloat16}:
-        return False
-    if accumulator.dtype != left.dtype or right.dtype != left.dtype:
-        return False
-    if accumulator.device != left.device or right.device != left.device:
-        return False
-    if accumulator.ndim != 3 or left.ndim != 3 or right.ndim != 3:
-        return False
-    if (
-        left.shape[0] != right.shape[0]
-        or left.shape[0] != accumulator.shape[0]
-        or left.shape[2] != right.shape[1]
-        or left.shape[1] != accumulator.shape[1]
-        or right.shape[2] != accumulator.shape[2]
-    ):
-        return False
-    if not accumulator.is_contiguous() or not left.is_contiguous():
-        return False
-    right_is_row_major = right.is_contiguous()
-    right_is_column_major = (
-        right.stride(-2) == 1 and right.stride(-1) == right.shape[-2]
-    )
-    if not right_is_row_major and not right_is_column_major:
-        return False
-    tensors = (accumulator, left, right)
     return (
-        left.shape[2] % 8 == 0
-        and right.shape[2] % 8 == 0
-        and all(tensor.data_ptr() % 16 == 0 for tensor in tensors)
-        and all(tensor.stride(0) % 8 == 0 for tensor in tensors)
+        cutlass_supports_problem(accumulator, left, right)
+        and left.is_contiguous()
+        and cutlass_has_supported_layout(right)
+    )
+
+
+def cutlass_symmetric_supports(
+    accumulator: Tensor,
+    left: Tensor,
+    right: Tensor,
+) -> bool:
+    return (
+        cutlass_supports_problem(accumulator, left, right)
+        and accumulator.shape[1] == accumulator.shape[2]
+        and cutlass_has_supported_layout(left)
+        and cutlass_has_supported_layout(right)
+        and not (cutlass_is_column_major(left) and cutlass_is_column_major(right))
     )
 
 
@@ -148,6 +167,49 @@ def cutlass_bmm(
     )
 
 
+def cutlass_symmetric_baddbmm(
+    accumulator: Tensor,
+    left: Tensor,
+    right: Tensor,
+    *,
+    alpha: float = 1.0,
+    beta: float = 1.0,
+) -> Tensor:
+    if not cutlass_symmetric_supports(accumulator, left, right):
+        raise ValueError(
+            "Tensor shape, layout, dtype, or device is unsupported by symmetric "
+            "SM80 CUTLASS"
+        )
+    output = torch.empty_like(accumulator)
+    load_cutlass_module().cutlass_symmetric_baddbmm(
+        accumulator,
+        left,
+        right,
+        output,
+        alpha,
+        beta,
+        cutlass_is_column_major(left),
+        cutlass_is_column_major(right),
+    )
+    return output
+
+
+def cutlass_symmetric_bmm(left: Tensor, right: Tensor) -> Tensor:
+    output_shape = (*left.shape[:-2], left.shape[-2], right.shape[-1])
+    accumulator = torch.empty(output_shape, dtype=left.dtype, device=left.device)
+    return cutlass_symmetric_baddbmm(
+        accumulator,
+        left,
+        right,
+        alpha=1.0,
+        beta=0.0,
+    )
+
+
+def cutlass_problem_is_square(left: Tensor, right: Tensor) -> bool:
+    return left.shape[-2] == left.shape[-1] and left.shape[-1] == right.shape[-1]
+
+
 class CutlassBackend:
     def __init__(self, fallback: MatrixBackend) -> None:
         self.fallback = fallback
@@ -163,7 +225,7 @@ class CutlassBackend:
         if not self.is_candidate(left):
             return self.fallback.symmetric_matmul(left, right)
         try:
-            return cutlass_bmm(left, right)
+            return cutlass_symmetric_bmm(left, right)
         except ValueError:
             return self.fallback.symmetric_matmul(left, right)
 
@@ -184,7 +246,7 @@ class CutlassBackend:
                 beta,
             )
         try:
-            return cutlass_baddbmm(
+            return cutlass_symmetric_baddbmm(
                 accumulator,
                 left,
                 right,
@@ -201,7 +263,7 @@ class CutlassBackend:
             )
 
     def matmul(self, left: Tensor, right: Tensor) -> Tensor:
-        if not self.is_candidate(left):
+        if not self.is_candidate(left) or not cutlass_problem_is_square(left, right):
             return self.fallback.matmul(left, right)
         try:
             return cutlass_bmm(left, right)
@@ -215,7 +277,7 @@ class CutlassBackend:
         accumulator: Tensor,
         beta: float,
     ) -> Tensor:
-        if not self.is_candidate(left):
+        if not self.is_candidate(left) or not cutlass_problem_is_square(left, right):
             return self.fallback.matmul_add(left, right, accumulator, beta)
         try:
             return cutlass_baddbmm(

@@ -1,0 +1,428 @@
+{
+  "device": "NVIDIA A10",
+  "compute_capability": [
+    8,
+    6
+  ],
+  "smoke": {
+    "returncode": 0,
+    "stdout": "{\"device\": \"NVIDIA A10\", \"square_relative_error\": 0.0, \"square_maximum_asymmetry\": 0.0, \"gram_relative_error\": 0.0, \"gram_maximum_asymmetry\": 0.0}\n",
+    "stderr": ""
+  },
+  "batches": {
+    "1": {
+      "returncode": 0,
+      "stdout": "{\"kind\": \"symmetric_square_baddbmm\", \"name\": \"torch\", \"batch_size\": 1, \"relative_error\": 0.0, \"maximum_asymmetry\": 0.0, \"median_ms\": 0.24371199309825897, \"p20_ms\": 0.24371199309825897, \"p80_ms\": 0.24473600089550018, \"minimum_ms\": 0.24268800020217896, \"maximum_ms\": 0.3686400055885315}\n{\"kind\": \"symmetric_square_baddbmm\", \"name\": \"cutlass_full\", \"batch_size\": 1, \"relative_error\": 0.0, \"maximum_asymmetry\": 0.0, \"median_ms\": 0.21248000115156174, \"p20_ms\": 0.21094399690628052, \"p80_ms\": 0.2131199985742569, \"minimum_ms\": 0.20684799551963806, \"maximum_ms\": 0.24143999814987183}\n{\"kind\": \"symmetric_square_baddbmm\", \"name\": \"cutlass_triangular\", \"batch_size\": 1, \"relative_error\": 0.0, \"maximum_asymmetry\": 0.0, \"median_ms\": 0.130048006772995, \"p20_ms\": 0.12902399897575378, \"p80_ms\": 0.131071999669075, \"minimum_ms\": 0.12800000607967377, \"maximum_ms\": 0.16383999586105347}\n{\"kind\": \"symmetric_gram\", \"name\": \"torch\", \"batch_size\": 1, \"relative_error\": 0.0, \"maximum_asymmetry\": 0.0, \"median_ms\": 1.4888960123062134, \"p20_ms\": 1.486847996711731, \"p80_ms\": 1.7571840286254883, \"minimum_ms\": 1.4807039499282837, \"maximum_ms\": 1.760256052017212}\n{\"kind\": \"symmetric_gram\", \"name\": \"cutlass_triangular\", \"batch_size\": 1, \"relative_error\": 0.0003942976472899318, \"maximum_asymmetry\": 0.0, \"median_ms\": 0.9809920191764832, \"p20_ms\": 0.9809920191764832, \"p80_ms\": 0.9809920191764832, \"minimum_ms\": 0.9799680113792419, \"maximum_ms\": 1.0383360385894775}\n{\"kind\": \"full_gns_core\", \"name\": \"torch\", \"batch_size\": 1, \"relative_error\": 0.0, \"maximum_asymmetry\": 0.0, \"median_ms\": 12.204544067382812, \"p20_ms\": 12.116991996765137, \"p80_ms\": 12.304384231567383, \"minimum_ms\": 11.96339225769043, \"maximum_ms\": 12.3504638671875}\n{\"kind\": \"full_gns_core\", \"name\": \"cutlass_triangular\", \"batch_size\": 1, \"relative_error\": 0.0005943448049947619, \"maximum_asymmetry\": 0.0, \"median_ms\": 8.794112205505371, \"p20_ms\": 8.79206371307373, \"p80_ms\": 8.79923152923584, \"minimum_ms\": 8.784895896911621, \"maximum_ms\": 8.913920402526855}\n{\"kind\": \"full_gns_end_to_end\", \"name\": \"upstream_standard_torch_eager\", \"batch_size\": 1, \"relative_error\": 0.002230360871180892, \"finite\": 1, \"output_rms\": 0.007831282913684845, \"orthogonality_residual\": 0.03548930212855339, \"median_ms\": 24.713727951049805, \"p20_ms\": 24.548351287841797, \"p80_ms\": 25.274368286132812, \"minimum_ms\": 24.151039123535156, \"maximum_ms\": 30.35647964477539}\n{\"kind\": \"full_gns_end_to_end\", \"name\": \"gram_torch_eager\", \"batch_size\": 1, \"relative_error\": 0.0, \"finite\": 1, \"output_rms\": 0.007830952294170856, \"orthogonality_residual\": 0.03541859611868858, \"median_ms\": 13.949440002441406, \"p20_ms\": 13.6878080368042, \"p80_ms\": 14.06771183013916, \"minimum_ms\": 13.677568435668945, \"maximum_ms\": 14.215167999267578}\n{\"kind\": \"full_gns_end_to_end\", \"name\": \"gram_cutlass_triangular\", \"batch_size\": 1, \"relative_error\": 0.0013340547448024154, \"finite\": 1, \"output_rms\": 0.00783157255500555, \"orthogonality_residual\": 0.0354376956820488, \"median_ms\": 10.329599857330322, \"p20_ms\": 10.289152145385742, \"p80_ms\": 11.051008224487305, \"minimum_ms\": 10.21951961517334, \"maximum_ms\": 11.156479835510254}\n{\"device\": \"NVIDIA A10\", \"torch\": \"2.11.0+cu130\", \"cuda\": \"13.0\", \"records\": [{\"kind\": \"symmetric_square_baddbmm\", \"name\": \"torch\", \"batch_size\": 1, \"relative_error\": 0.0, \"maximum_asymmetry\": 0.0, \"median_ms\": 0.24371199309825897, \"p20_ms\": 0.24371199309825897, \"p80_ms\": 0.24473600089550018, \"minimum_ms\": 0.24268800020217896, \"maximum_ms\": 0.3686400055885315}, {\"kind\": \"symmetric_square_baddbmm\", \"name\": \"cutlass_full\", \"batch_size\": 1, \"relative_error\": 0.0, \"maximum_asymmetry\": 0.0, \"median_ms\": 0.21248000115156174, \"p20_ms\": 0.21094399690628052, \"p80_ms\": 0.2131199985742569, \"minimum_ms\": 0.20684799551963806, \"maximum_ms\": 0.24143999814987183}, {\"kind\": \"symmetric_square_baddbmm\", \"name\": \"cutlass_triangular\", \"batch_size\": 1, \"relative_error\": 0.0, \"maximum_asymmetry\": 0.0, \"median_ms\": 0.130048006772995, \"p20_ms\": 0.12902399897575378, \"p80_ms\": 0.131071999669075, \"minimum_ms\": 0.12800000607967377, \"maximum_ms\": 0.16383999586105347}, {\"kind\": \"symmetric_gram\", \"name\": \"torch\", \"batch_size\": 1, \"relative_error\": 0.0, \"maximum_asymmetry\": 0.0, \"median_ms\": 1.4888960123062134, \"p20_ms\": 1.486847996711731, \"p80_ms\": 1.7571840286254883, \"minimum_ms\": 1.4807039499282837, \"maximum_ms\": 1.760256052017212}, {\"kind\": \"symmetric_gram\", \"name\": \"cutlass_triangular\", \"batch_size\": 1, \"relative_error\": 0.0003942976472899318, \"maximum_asymmetry\": 0.0, \"median_ms\": 0.9809920191764832, \"p20_ms\": 0.9809920191764832, \"p80_ms\": 0.9809920191764832, \"minimum_ms\": 0.9799680113792419, \"maximum_ms\": 1.0383360385894775}, {\"kind\": \"full_gns_core\", \"name\": \"torch\", \"batch_size\": 1, \"relative_error\": 0.0, \"maximum_asymmetry\": 0.0, \"median_ms\": 12.204544067382812, \"p20_ms\": 12.116991996765137, \"p80_ms\": 12.304384231567383, \"minimum_ms\": 11.96339225769043, \"maximum_ms\": 12.3504638671875}, {\"kind\": \"full_gns_core\", \"name\": \"cutlass_triangular\", \"batch_size\": 1, \"relative_error\": 0.0005943448049947619, \"maximum_asymmetry\": 0.0, \"median_ms\": 8.794112205505371, \"p20_ms\": 8.79206371307373, \"p80_ms\": 8.79923152923584, \"minimum_ms\": 8.784895896911621, \"maximum_ms\": 8.913920402526855}, {\"kind\": \"full_gns_end_to_end\", \"name\": \"upstream_standard_torch_eager\", \"batch_size\": 1, \"relative_error\": 0.002230360871180892, \"finite\": 1, \"output_rms\": 0.007831282913684845, \"orthogonality_residual\": 0.03548930212855339, \"median_ms\": 24.713727951049805, \"p20_ms\": 24.548351287841797, \"p80_ms\": 25.274368286132812, \"minimum_ms\": 24.151039123535156, \"maximum_ms\": 30.35647964477539}, {\"kind\": \"full_gns_end_to_end\", \"name\": \"gram_torch_eager\", \"batch_size\": 1, \"relative_error\": 0.0, \"finite\": 1, \"output_rms\": 0.007830952294170856, \"orthogonality_residual\": 0.03541859611868858, \"median_ms\": 13.949440002441406, \"p20_ms\": 13.6878080368042, \"p80_ms\": 14.06771183013916, \"minimum_ms\": 13.677568435668945, \"maximum_ms\": 14.215167999267578}, {\"kind\": \"full_gns_end_to_end\", \"name\": \"gram_cutlass_triangular\", \"batch_size\": 1, \"relative_error\": 0.0013340547448024154, \"finite\": 1, \"output_rms\": 0.00783157255500555, \"orthogonality_residual\": 0.0354376956820488, \"median_ms\": 10.329599857330322, \"p20_ms\": 10.289152145385742, \"p80_ms\": 11.051008224487305, \"minimum_ms\": 10.21951961517334, \"maximum_ms\": 11.156479835510254}]}\n",
+      "stderr": "",
+      "payload": {
+        "device": "NVIDIA A10",
+        "torch": "2.11.0+cu130",
+        "cuda": "13.0",
+        "records": [
+          {
+            "kind": "symmetric_square_baddbmm",
+            "name": "torch",
+            "batch_size": 1,
+            "relative_error": 0.0,
+            "maximum_asymmetry": 0.0,
+            "median_ms": 0.24371199309825897,
+            "p20_ms": 0.24371199309825897,
+            "p80_ms": 0.24473600089550018,
+            "minimum_ms": 0.24268800020217896,
+            "maximum_ms": 0.3686400055885315
+          },
+          {
+            "kind": "symmetric_square_baddbmm",
+            "name": "cutlass_full",
+            "batch_size": 1,
+            "relative_error": 0.0,
+            "maximum_asymmetry": 0.0,
+            "median_ms": 0.21248000115156174,
+            "p20_ms": 0.21094399690628052,
+            "p80_ms": 0.2131199985742569,
+            "minimum_ms": 0.20684799551963806,
+            "maximum_ms": 0.24143999814987183
+          },
+          {
+            "kind": "symmetric_square_baddbmm",
+            "name": "cutlass_triangular",
+            "batch_size": 1,
+            "relative_error": 0.0,
+            "maximum_asymmetry": 0.0,
+            "median_ms": 0.130048006772995,
+            "p20_ms": 0.12902399897575378,
+            "p80_ms": 0.131071999669075,
+            "minimum_ms": 0.12800000607967377,
+            "maximum_ms": 0.16383999586105347
+          },
+          {
+            "kind": "symmetric_gram",
+            "name": "torch",
+            "batch_size": 1,
+            "relative_error": 0.0,
+            "maximum_asymmetry": 0.0,
+            "median_ms": 1.4888960123062134,
+            "p20_ms": 1.486847996711731,
+            "p80_ms": 1.7571840286254883,
+            "minimum_ms": 1.4807039499282837,
+            "maximum_ms": 1.760256052017212
+          },
+          {
+            "kind": "symmetric_gram",
+            "name": "cutlass_triangular",
+            "batch_size": 1,
+            "relative_error": 0.0003942976472899318,
+            "maximum_asymmetry": 0.0,
+            "median_ms": 0.9809920191764832,
+            "p20_ms": 0.9809920191764832,
+            "p80_ms": 0.9809920191764832,
+            "minimum_ms": 0.9799680113792419,
+            "maximum_ms": 1.0383360385894775
+          },
+          {
+            "kind": "full_gns_core",
+            "name": "torch",
+            "batch_size": 1,
+            "relative_error": 0.0,
+            "maximum_asymmetry": 0.0,
+            "median_ms": 12.204544067382812,
+            "p20_ms": 12.116991996765137,
+            "p80_ms": 12.304384231567383,
+            "minimum_ms": 11.96339225769043,
+            "maximum_ms": 12.3504638671875
+          },
+          {
+            "kind": "full_gns_core",
+            "name": "cutlass_triangular",
+            "batch_size": 1,
+            "relative_error": 0.0005943448049947619,
+            "maximum_asymmetry": 0.0,
+            "median_ms": 8.794112205505371,
+            "p20_ms": 8.79206371307373,
+            "p80_ms": 8.79923152923584,
+            "minimum_ms": 8.784895896911621,
+            "maximum_ms": 8.913920402526855
+          },
+          {
+            "kind": "full_gns_end_to_end",
+            "name": "upstream_standard_torch_eager",
+            "batch_size": 1,
+            "relative_error": 0.002230360871180892,
+            "finite": 1,
+            "output_rms": 0.007831282913684845,
+            "orthogonality_residual": 0.03548930212855339,
+            "median_ms": 24.713727951049805,
+            "p20_ms": 24.548351287841797,
+            "p80_ms": 25.274368286132812,
+            "minimum_ms": 24.151039123535156,
+            "maximum_ms": 30.35647964477539
+          },
+          {
+            "kind": "full_gns_end_to_end",
+            "name": "gram_torch_eager",
+            "batch_size": 1,
+            "relative_error": 0.0,
+            "finite": 1,
+            "output_rms": 0.007830952294170856,
+            "orthogonality_residual": 0.03541859611868858,
+            "median_ms": 13.949440002441406,
+            "p20_ms": 13.6878080368042,
+            "p80_ms": 14.06771183013916,
+            "minimum_ms": 13.677568435668945,
+            "maximum_ms": 14.215167999267578
+          },
+          {
+            "kind": "full_gns_end_to_end",
+            "name": "gram_cutlass_triangular",
+            "batch_size": 1,
+            "relative_error": 0.0013340547448024154,
+            "finite": 1,
+            "output_rms": 0.00783157255500555,
+            "orthogonality_residual": 0.0354376956820488,
+            "median_ms": 10.329599857330322,
+            "p20_ms": 10.289152145385742,
+            "p80_ms": 11.051008224487305,
+            "minimum_ms": 10.21951961517334,
+            "maximum_ms": 11.156479835510254
+          }
+        ]
+      }
+    },
+    "8": {
+      "returncode": 0,
+      "stdout": "{\"kind\": \"symmetric_square_baddbmm\", \"name\": \"torch\", \"batch_size\": 8, \"relative_error\": 0.0, \"maximum_asymmetry\": 0.0, \"median_ms\": 2.548224091529846, \"p20_ms\": 2.2896640300750732, \"p80_ms\": 3.009536027908325, \"minimum_ms\": 2.2558720111846924, \"maximum_ms\": 3.0146560668945312}\n{\"kind\": \"symmetric_square_baddbmm\", \"name\": \"cutlass_full\", \"batch_size\": 8, \"relative_error\": 6.245195982046425e-05, \"maximum_asymmetry\": 0.0, \"median_ms\": 1.6562719941139221, \"p20_ms\": 1.5872000455856323, \"p80_ms\": 1.7131520509719849, \"minimum_ms\": 1.5831040143966675, \"maximum_ms\": 1.738752007484436}\n{\"kind\": \"symmetric_square_baddbmm\", \"name\": \"cutlass_triangular\", \"batch_size\": 8, \"relative_error\": 6.245195982046425e-05, \"maximum_asymmetry\": 0.0, \"median_ms\": 1.3824000358581543, \"p20_ms\": 1.381376028060913, \"p80_ms\": 1.4008320569992065, \"minimum_ms\": 1.3803520202636719, \"maximum_ms\": 1.4735360145568848}\n{\"kind\": \"symmetric_gram\", \"name\": \"torch\", \"batch_size\": 8, \"relative_error\": 0.0, \"maximum_asymmetry\": 0.0, \"median_ms\": 18.10636806488037, \"p20_ms\": 18.094079971313477, \"p80_ms\": 18.23744010925293, \"minimum_ms\": 17.878015518188477, \"maximum_ms\": 18.710527420043945}\n{\"kind\": \"symmetric_gram\", \"name\": \"cutlass_triangular\", \"batch_size\": 8, \"relative_error\": 0.0, \"maximum_asymmetry\": 0.0, \"median_ms\": 9.191423892974854, \"p20_ms\": 9.08902359008789, \"p80_ms\": 9.232383728027344, \"minimum_ms\": 9.088000297546387, \"maximum_ms\": 9.236479759216309}\n{\"kind\": \"full_gns_core\", \"name\": \"torch\", \"batch_size\": 8, \"relative_error\": 0.0, \"maximum_asymmetry\": 0.0, \"median_ms\": 114.31219100952148, \"p20_ms\": 112.30924987792969, \"p80_ms\": 116.13900756835938, \"minimum_ms\": 111.47058868408203, \"maximum_ms\": 126.36466979980469}\n{\"kind\": \"full_gns_core\", \"name\": \"cutlass_triangular\", \"batch_size\": 8, \"relative_error\": 0.00037056568544358015, \"maximum_asymmetry\": 0.0, \"median_ms\": 71.36665725708008, \"p20_ms\": 70.93657684326172, \"p80_ms\": 71.90946960449219, \"minimum_ms\": 70.67955017089844, \"maximum_ms\": 73.71981048583984}\n{\"kind\": \"full_gns_end_to_end\", \"name\": \"upstream_standard_torch_eager\", \"batch_size\": 8, \"relative_error\": 0.0018642026698216796, \"finite\": 1, \"output_rms\": 0.007831751368939877, \"orthogonality_residual\": 0.03551558405160904, \"median_ms\": 219.53433227539062, \"p20_ms\": 217.87135314941406, \"p80_ms\": 222.33599853515625, \"minimum_ms\": 217.1197509765625, \"maximum_ms\": 223.77471923828125}\n{\"kind\": \"full_gns_end_to_end\", \"name\": \"gram_torch_eager\", \"batch_size\": 8, \"relative_error\": 0.0, \"finite\": 1, \"output_rms\": 0.007831815630197525, \"orthogonality_residual\": 0.03544856607913971, \"median_ms\": 127.37331008911133, \"p20_ms\": 126.62886047363281, \"p80_ms\": 129.07725524902344, \"minimum_ms\": 124.95053100585938, \"maximum_ms\": 130.74124145507812}\n{\"kind\": \"full_gns_end_to_end\", \"name\": \"gram_cutlass_triangular\", \"batch_size\": 8, \"relative_error\": 0.0009225767571479082, \"finite\": 1, \"output_rms\": 0.007831573486328125, \"orthogonality_residual\": 0.03543131798505783, \"median_ms\": 84.70476913452148, \"p20_ms\": 84.23219299316406, \"p80_ms\": 85.5541763305664, \"minimum_ms\": 83.49081420898438, \"maximum_ms\": 87.00313568115234}\n{\"device\": \"NVIDIA A10\", \"torch\": \"2.11.0+cu130\", \"cuda\": \"13.0\", \"records\": [{\"kind\": \"symmetric_square_baddbmm\", \"name\": \"torch\", \"batch_size\": 8, \"relative_error\": 0.0, \"maximum_asymmetry\": 0.0, \"median_ms\": 2.548224091529846, \"p20_ms\": 2.2896640300750732, \"p80_ms\": 3.009536027908325, \"minimum_ms\": 2.2558720111846924, \"maximum_ms\": 3.0146560668945312}, {\"kind\": \"symmetric_square_baddbmm\", \"name\": \"cutlass_full\", \"batch_size\": 8, \"relative_error\": 6.245195982046425e-05, \"maximum_asymmetry\": 0.0, \"median_ms\": 1.6562719941139221, \"p20_ms\": 1.5872000455856323, \"p80_ms\": 1.7131520509719849, \"minimum_ms\": 1.5831040143966675, \"maximum_ms\": 1.738752007484436}, {\"kind\": \"symmetric_square_baddbmm\", \"name\": \"cutlass_triangular\", \"batch_size\": 8, \"relative_error\": 6.245195982046425e-05, \"maximum_asymmetry\": 0.0, \"median_ms\": 1.3824000358581543, \"p20_ms\": 1.381376028060913, \"p80_ms\": 1.4008320569992065, \"minimum_ms\": 1.3803520202636719, \"maximum_ms\": 1.4735360145568848}, {\"kind\": \"symmetric_gram\", \"name\": \"torch\", \"batch_size\": 8, \"relative_error\": 0.0, \"maximum_asymmetry\": 0.0, \"median_ms\": 18.10636806488037, \"p20_ms\": 18.094079971313477, \"p80_ms\": 18.23744010925293, \"minimum_ms\": 17.878015518188477, \"maximum_ms\": 18.710527420043945}, {\"kind\": \"symmetric_gram\", \"name\": \"cutlass_triangular\", \"batch_size\": 8, \"relative_error\": 0.0, \"maximum_asymmetry\": 0.0, \"median_ms\": 9.191423892974854, \"p20_ms\": 9.08902359008789, \"p80_ms\": 9.232383728027344, \"minimum_ms\": 9.088000297546387, \"maximum_ms\": 9.236479759216309}, {\"kind\": \"full_gns_core\", \"name\": \"torch\", \"batch_size\": 8, \"relative_error\": 0.0, \"maximum_asymmetry\": 0.0, \"median_ms\": 114.31219100952148, \"p20_ms\": 112.30924987792969, \"p80_ms\": 116.13900756835938, \"minimum_ms\": 111.47058868408203, \"maximum_ms\": 126.36466979980469}, {\"kind\": \"full_gns_core\", \"name\": \"cutlass_triangular\", \"batch_size\": 8, \"relative_error\": 0.00037056568544358015, \"maximum_asymmetry\": 0.0, \"median_ms\": 71.36665725708008, \"p20_ms\": 70.93657684326172, \"p80_ms\": 71.90946960449219, \"minimum_ms\": 70.67955017089844, \"maximum_ms\": 73.71981048583984}, {\"kind\": \"full_gns_end_to_end\", \"name\": \"upstream_standard_torch_eager\", \"batch_size\": 8, \"relative_error\": 0.0018642026698216796, \"finite\": 1, \"output_rms\": 0.007831751368939877, \"orthogonality_residual\": 0.03551558405160904, \"median_ms\": 219.53433227539062, \"p20_ms\": 217.87135314941406, \"p80_ms\": 222.33599853515625, \"minimum_ms\": 217.1197509765625, \"maximum_ms\": 223.77471923828125}, {\"kind\": \"full_gns_end_to_end\", \"name\": \"gram_torch_eager\", \"batch_size\": 8, \"relative_error\": 0.0, \"finite\": 1, \"output_rms\": 0.007831815630197525, \"orthogonality_residual\": 0.03544856607913971, \"median_ms\": 127.37331008911133, \"p20_ms\": 126.62886047363281, \"p80_ms\": 129.07725524902344, \"minimum_ms\": 124.95053100585938, \"maximum_ms\": 130.74124145507812}, {\"kind\": \"full_gns_end_to_end\", \"name\": \"gram_cutlass_triangular\", \"batch_size\": 8, \"relative_error\": 0.0009225767571479082, \"finite\": 1, \"output_rms\": 0.007831573486328125, \"orthogonality_residual\": 0.03543131798505783, \"median_ms\": 84.70476913452148, \"p20_ms\": 84.23219299316406, \"p80_ms\": 85.5541763305664, \"minimum_ms\": 83.49081420898438, \"maximum_ms\": 87.00313568115234}]}\n",
+      "stderr": "",
+      "payload": {
+        "device": "NVIDIA A10",
+        "torch": "2.11.0+cu130",
+        "cuda": "13.0",
+        "records": [
+          {
+            "kind": "symmetric_square_baddbmm",
+            "name": "torch",
+            "batch_size": 8,
+            "relative_error": 0.0,
+            "maximum_asymmetry": 0.0,
+            "median_ms": 2.548224091529846,
+            "p20_ms": 2.2896640300750732,
+            "p80_ms": 3.009536027908325,
+            "minimum_ms": 2.2558720111846924,
+            "maximum_ms": 3.0146560668945312
+          },
+          {
+            "kind": "symmetric_square_baddbmm",
+            "name": "cutlass_full",
+            "batch_size": 8,
+            "relative_error": 6.245195982046425e-05,
+            "maximum_asymmetry": 0.0,
+            "median_ms": 1.6562719941139221,
+            "p20_ms": 1.5872000455856323,
+            "p80_ms": 1.7131520509719849,
+            "minimum_ms": 1.5831040143966675,
+            "maximum_ms": 1.738752007484436
+          },
+          {
+            "kind": "symmetric_square_baddbmm",
+            "name": "cutlass_triangular",
+            "batch_size": 8,
+            "relative_error": 6.245195982046425e-05,
+            "maximum_asymmetry": 0.0,
+            "median_ms": 1.3824000358581543,
+            "p20_ms": 1.381376028060913,
+            "p80_ms": 1.4008320569992065,
+            "minimum_ms": 1.3803520202636719,
+            "maximum_ms": 1.4735360145568848
+          },
+          {
+            "kind": "symmetric_gram",
+            "name": "torch",
+            "batch_size": 8,
+            "relative_error": 0.0,
+            "maximum_asymmetry": 0.0,
+            "median_ms": 18.10636806488037,
+            "p20_ms": 18.094079971313477,
+            "p80_ms": 18.23744010925293,
+            "minimum_ms": 17.878015518188477,
+            "maximum_ms": 18.710527420043945
+          },
+          {
+            "kind": "symmetric_gram",
+            "name": "cutlass_triangular",
+            "batch_size": 8,
+            "relative_error": 0.0,
+            "maximum_asymmetry": 0.0,
+            "median_ms": 9.191423892974854,
+            "p20_ms": 9.08902359008789,
+            "p80_ms": 9.232383728027344,
+            "minimum_ms": 9.088000297546387,
+            "maximum_ms": 9.236479759216309
+          },
+          {
+            "kind": "full_gns_core",
+            "name": "torch",
+            "batch_size": 8,
+            "relative_error": 0.0,
+            "maximum_asymmetry": 0.0,
+            "median_ms": 114.31219100952148,
+            "p20_ms": 112.30924987792969,
+            "p80_ms": 116.13900756835938,
+            "minimum_ms": 111.47058868408203,
+            "maximum_ms": 126.36466979980469
+          },
+          {
+            "kind": "full_gns_core",
+            "name": "cutlass_triangular",
+            "batch_size": 8,
+            "relative_error": 0.00037056568544358015,
+            "maximum_asymmetry": 0.0,
+            "median_ms": 71.36665725708008,
+            "p20_ms": 70.93657684326172,
+            "p80_ms": 71.90946960449219,
+            "minimum_ms": 70.67955017089844,
+            "maximum_ms": 73.71981048583984
+          },
+          {
+            "kind": "full_gns_end_to_end",
+            "name": "upstream_standard_torch_eager",
+            "batch_size": 8,
+            "relative_error": 0.0018642026698216796,
+            "finite": 1,
+            "output_rms": 0.007831751368939877,
+            "orthogonality_residual": 0.03551558405160904,
+            "median_ms": 219.53433227539062,
+            "p20_ms": 217.87135314941406,
+            "p80_ms": 222.33599853515625,
+            "minimum_ms": 217.1197509765625,
+            "maximum_ms": 223.77471923828125
+          },
+          {
+            "kind": "full_gns_end_to_end",
+            "name": "gram_torch_eager",
+            "batch_size": 8,
+            "relative_error": 0.0,
+            "finite": 1,
+            "output_rms": 0.007831815630197525,
+            "orthogonality_residual": 0.03544856607913971,
+            "median_ms": 127.37331008911133,
+            "p20_ms": 126.62886047363281,
+            "p80_ms": 129.07725524902344,
+            "minimum_ms": 124.95053100585938,
+            "maximum_ms": 130.74124145507812
+          },
+          {
+            "kind": "full_gns_end_to_end",
+            "name": "gram_cutlass_triangular",
+            "batch_size": 8,
+            "relative_error": 0.0009225767571479082,
+            "finite": 1,
+            "output_rms": 0.007831573486328125,
+            "orthogonality_residual": 0.03543131798505783,
+            "median_ms": 84.70476913452148,
+            "p20_ms": 84.23219299316406,
+            "p80_ms": 85.5541763305664,
+            "minimum_ms": 83.49081420898438,
+            "maximum_ms": 87.00313568115234
+          }
+        ]
+      }
+    },
+    "32": {
+      "returncode": 0,
+      "stdout": "{\"kind\": \"symmetric_square_baddbmm\", \"name\": \"torch\", \"batch_size\": 32, \"relative_error\": 0.0, \"maximum_asymmetry\": 0.0, \"median_ms\": 12.470783710479736, \"p20_ms\": 12.291071891784668, \"p80_ms\": 12.66380786895752, \"minimum_ms\": 11.92959976196289, \"maximum_ms\": 14.647295951843262}\n{\"kind\": \"symmetric_square_baddbmm\", \"name\": \"cutlass_full\", \"batch_size\": 32, \"relative_error\": 6.510025559691712e-05, \"maximum_asymmetry\": 0.0, \"median_ms\": 8.334336280822754, \"p20_ms\": 8.29849624633789, \"p80_ms\": 8.657919883728027, \"minimum_ms\": 8.202239990234375, \"maximum_ms\": 10.460160255432129}\n{\"kind\": \"symmetric_square_baddbmm\", \"name\": \"cutlass_triangular\", \"batch_size\": 32, \"relative_error\": 6.510025559691712e-05, \"maximum_asymmetry\": 0.0, \"median_ms\": 5.477887868881226, \"p20_ms\": 5.408768177032471, \"p80_ms\": 5.494783878326416, \"minimum_ms\": 5.295104026794434, \"maximum_ms\": 5.6750078201293945}\n{\"kind\": \"symmetric_gram\", \"name\": \"torch\", \"batch_size\": 32, \"relative_error\": 0.0, \"maximum_asymmetry\": 0.0, \"median_ms\": 88.41574096679688, \"p20_ms\": 87.52435302734375, \"p80_ms\": 89.42387390136719, \"minimum_ms\": 85.71392059326172, \"maximum_ms\": 91.3776626586914}\n{\"kind\": \"symmetric_gram\", \"name\": \"cutlass_triangular\", \"batch_size\": 32, \"relative_error\": 0.0, \"maximum_asymmetry\": 0.0, \"median_ms\": 36.881919860839844, \"p20_ms\": 36.44927978515625, \"p80_ms\": 38.44607925415039, \"minimum_ms\": 35.77241516113281, \"maximum_ms\": 39.33491134643555}\n{\"kind\": \"full_gns_core\", \"name\": \"torch\", \"batch_size\": 32, \"relative_error\": 0.0, \"maximum_asymmetry\": 0.0, \"median_ms\": 501.59104919433594, \"p20_ms\": 499.6444091796875, \"p80_ms\": 504.3240966796875, \"minimum_ms\": 494.50189208984375, \"maximum_ms\": 506.13043212890625}\n{\"kind\": \"full_gns_core\", \"name\": \"cutlass_triangular\", \"batch_size\": 32, \"relative_error\": 0.0003736191720236093, \"maximum_asymmetry\": 0.0, \"median_ms\": 298.6639404296875, \"p20_ms\": 295.9237060546875, \"p80_ms\": 301.9346008300781, \"minimum_ms\": 293.51629638671875, \"maximum_ms\": 317.11334228515625}\n{\"kind\": \"full_gns_end_to_end\", \"name\": \"upstream_standard_torch_eager\", \"batch_size\": 32, \"relative_error\": 0.0018643831135705113, \"finite\": 1, \"output_rms\": 0.007831758819520473, \"orthogonality_residual\": 0.035519205033779144, \"median_ms\": 1036.7836303710938, \"p20_ms\": 1032.44189453125, \"p80_ms\": 1040.4874267578125, \"minimum_ms\": 1021.8741455078125, \"maximum_ms\": 1046.509521484375}\n{\"kind\": \"full_gns_end_to_end\", \"name\": \"gram_torch_eager\", \"batch_size\": 32, \"relative_error\": 0.0, \"finite\": 1, \"output_rms\": 0.007831856608390808, \"orthogonality_residual\": 0.03545478731393814, \"median_ms\": 585.4939880371094, \"p20_ms\": 583.6328735351562, \"p80_ms\": 590.57763671875, \"minimum_ms\": 581.2971801757812, \"maximum_ms\": 597.6075439453125}\n{\"kind\": \"full_gns_end_to_end\", \"name\": \"gram_cutlass_triangular\", \"batch_size\": 32, \"relative_error\": 0.0009280198137275875, \"finite\": 1, \"output_rms\": 0.007831595838069916, \"orthogonality_residual\": 0.035435497760772705, \"median_ms\": 380.76979064941406, \"p20_ms\": 369.3168640136719, \"p80_ms\": 389.5920715332031, \"minimum_ms\": 364.63922119140625, \"maximum_ms\": 392.0291748046875}\n{\"device\": \"NVIDIA A10\", \"torch\": \"2.11.0+cu130\", \"cuda\": \"13.0\", \"records\": [{\"kind\": \"symmetric_square_baddbmm\", \"name\": \"torch\", \"batch_size\": 32, \"relative_error\": 0.0, \"maximum_asymmetry\": 0.0, \"median_ms\": 12.470783710479736, \"p20_ms\": 12.291071891784668, \"p80_ms\": 12.66380786895752, \"minimum_ms\": 11.92959976196289, \"maximum_ms\": 14.647295951843262}, {\"kind\": \"symmetric_square_baddbmm\", \"name\": \"cutlass_full\", \"batch_size\": 32, \"relative_error\": 6.510025559691712e-05, \"maximum_asymmetry\": 0.0, \"median_ms\": 8.334336280822754, \"p20_ms\": 8.29849624633789, \"p80_ms\": 8.657919883728027, \"minimum_ms\": 8.202239990234375, \"maximum_ms\": 10.460160255432129}, {\"kind\": \"symmetric_square_baddbmm\", \"name\": \"cutlass_triangular\", \"batch_size\": 32, \"relative_error\": 6.510025559691712e-05, \"maximum_asymmetry\": 0.0, \"median_ms\": 5.477887868881226, \"p20_ms\": 5.408768177032471, \"p80_ms\": 5.494783878326416, \"minimum_ms\": 5.295104026794434, \"maximum_ms\": 5.6750078201293945}, {\"kind\": \"symmetric_gram\", \"name\": \"torch\", \"batch_size\": 32, \"relative_error\": 0.0, \"maximum_asymmetry\": 0.0, \"median_ms\": 88.41574096679688, \"p20_ms\": 87.52435302734375, \"p80_ms\": 89.42387390136719, \"minimum_ms\": 85.71392059326172, \"maximum_ms\": 91.3776626586914}, {\"kind\": \"symmetric_gram\", \"name\": \"cutlass_triangular\", \"batch_size\": 32, \"relative_error\": 0.0, \"maximum_asymmetry\": 0.0, \"median_ms\": 36.881919860839844, \"p20_ms\": 36.44927978515625, \"p80_ms\": 38.44607925415039, \"minimum_ms\": 35.77241516113281, \"maximum_ms\": 39.33491134643555}, {\"kind\": \"full_gns_core\", \"name\": \"torch\", \"batch_size\": 32, \"relative_error\": 0.0, \"maximum_asymmetry\": 0.0, \"median_ms\": 501.59104919433594, \"p20_ms\": 499.6444091796875, \"p80_ms\": 504.3240966796875, \"minimum_ms\": 494.50189208984375, \"maximum_ms\": 506.13043212890625}, {\"kind\": \"full_gns_core\", \"name\": \"cutlass_triangular\", \"batch_size\": 32, \"relative_error\": 0.0003736191720236093, \"maximum_asymmetry\": 0.0, \"median_ms\": 298.6639404296875, \"p20_ms\": 295.9237060546875, \"p80_ms\": 301.9346008300781, \"minimum_ms\": 293.51629638671875, \"maximum_ms\": 317.11334228515625}, {\"kind\": \"full_gns_end_to_end\", \"name\": \"upstream_standard_torch_eager\", \"batch_size\": 32, \"relative_error\": 0.0018643831135705113, \"finite\": 1, \"output_rms\": 0.007831758819520473, \"orthogonality_residual\": 0.035519205033779144, \"median_ms\": 1036.7836303710938, \"p20_ms\": 1032.44189453125, \"p80_ms\": 1040.4874267578125, \"minimum_ms\": 1021.8741455078125, \"maximum_ms\": 1046.509521484375}, {\"kind\": \"full_gns_end_to_end\", \"name\": \"gram_torch_eager\", \"batch_size\": 32, \"relative_error\": 0.0, \"finite\": 1, \"output_rms\": 0.007831856608390808, \"orthogonality_residual\": 0.03545478731393814, \"median_ms\": 585.4939880371094, \"p20_ms\": 583.6328735351562, \"p80_ms\": 590.57763671875, \"minimum_ms\": 581.2971801757812, \"maximum_ms\": 597.6075439453125}, {\"kind\": \"full_gns_end_to_end\", \"name\": \"gram_cutlass_triangular\", \"batch_size\": 32, \"relative_error\": 0.0009280198137275875, \"finite\": 1, \"output_rms\": 0.007831595838069916, \"orthogonality_residual\": 0.035435497760772705, \"median_ms\": 380.76979064941406, \"p20_ms\": 369.3168640136719, \"p80_ms\": 389.5920715332031, \"minimum_ms\": 364.63922119140625, \"maximum_ms\": 392.0291748046875}]}\n",
+      "stderr": "",
+      "payload": {
+        "device": "NVIDIA A10",
+        "torch": "2.11.0+cu130",
+        "cuda": "13.0",
+        "records": [
+          {
+            "kind": "symmetric_square_baddbmm",
+            "name": "torch",
+            "batch_size": 32,
+            "relative_error": 0.0,
+            "maximum_asymmetry": 0.0,
+            "median_ms": 12.470783710479736,
+            "p20_ms": 12.291071891784668,
+            "p80_ms": 12.66380786895752,
+            "minimum_ms": 11.92959976196289,
+            "maximum_ms": 14.647295951843262
+          },
+          {
+            "kind": "symmetric_square_baddbmm",
+            "name": "cutlass_full",
+            "batch_size": 32,
+            "relative_error": 6.510025559691712e-05,
+            "maximum_asymmetry": 0.0,
+            "median_ms": 8.334336280822754,
+            "p20_ms": 8.29849624633789,
+            "p80_ms": 8.657919883728027,
+            "minimum_ms": 8.202239990234375,
+            "maximum_ms": 10.460160255432129
+          },
+          {
+            "kind": "symmetric_square_baddbmm",
+            "name": "cutlass_triangular",
+            "batch_size": 32,
+            "relative_error": 6.510025559691712e-05,
+            "maximum_asymmetry": 0.0,
+            "median_ms": 5.477887868881226,
+            "p20_ms": 5.408768177032471,
+            "p80_ms": 5.494783878326416,
+            "minimum_ms": 5.295104026794434,
+            "maximum_ms": 5.6750078201293945
+          },
+          {
+            "kind": "symmetric_gram",
+            "name": "torch",
+            "batch_size": 32,
+            "relative_error": 0.0,
+            "maximum_asymmetry": 0.0,
+            "median_ms": 88.41574096679688,
+            "p20_ms": 87.52435302734375,
+            "p80_ms": 89.42387390136719,
+            "minimum_ms": 85.71392059326172,
+            "maximum_ms": 91.3776626586914
+          },
+          {
+            "kind": "symmetric_gram",
+            "name": "cutlass_triangular",
+            "batch_size": 32,
+            "relative_error": 0.0,
+            "maximum_asymmetry": 0.0,
+            "median_ms": 36.881919860839844,
+            "p20_ms": 36.44927978515625,
+            "p80_ms": 38.44607925415039,
+            "minimum_ms": 35.77241516113281,
+            "maximum_ms": 39.33491134643555
+          },
+          {
+            "kind": "full_gns_core",
+            "name": "torch",
+            "batch_size": 32,
+            "relative_error": 0.0,
+            "maximum_asymmetry": 0.0,
+            "median_ms": 501.59104919433594,
+            "p20_ms": 499.6444091796875,
+            "p80_ms": 504.3240966796875,
+            "minimum_ms": 494.50189208984375,
+            "maximum_ms": 506.13043212890625
+          },
+          {
+            "kind": "full_gns_core",
+            "name": "cutlass_triangular",
+            "batch_size": 32,
+            "relative_error": 0.0003736191720236093,
+            "maximum_asymmetry": 0.0,
+            "median_ms": 298.6639404296875,
+            "p20_ms": 295.9237060546875,
+            "p80_ms": 301.9346008300781,
+            "minimum_ms": 293.51629638671875,
+            "maximum_ms": 317.11334228515625
+          },
+          {
+            "kind": "full_gns_end_to_end",
+            "name": "upstream_standard_torch_eager",
+            "batch_size": 32,
+            "relative_error": 0.0018643831135705113,
+            "finite": 1,
+            "output_rms": 0.007831758819520473,
+            "orthogonality_residual": 0.035519205033779144,
+            "median_ms": 1036.7836303710938,
+            "p20_ms": 1032.44189453125,
+            "p80_ms": 1040.4874267578125,
+            "minimum_ms": 1021.8741455078125,
+            "maximum_ms": 1046.509521484375
+          },
+          {
+            "kind": "full_gns_end_to_end",
+            "name": "gram_torch_eager",
+            "batch_size": 32,
+            "relative_error": 0.0,
+            "finite": 1,
+            "output_rms": 0.007831856608390808,
+            "orthogonality_residual": 0.03545478731393814,
+            "median_ms": 585.4939880371094,
+            "p20_ms": 583.6328735351562,
+            "p80_ms": 590.57763671875,
+            "minimum_ms": 581.2971801757812,
+            "maximum_ms": 597.6075439453125
+          },
+          {
+            "kind": "full_gns_end_to_end",
+            "name": "gram_cutlass_triangular",
+            "batch_size": 32,
+            "relative_error": 0.0009280198137275875,
+            "finite": 1,
+            "output_rms": 0.007831595838069916,
+            "orthogonality_residual": 0.035435497760772705,
+            "median_ms": 380.76979064941406,
+            "p20_ms": 369.3168640136719,
+            "p80_ms": 389.5920715332031,
+            "minimum_ms": 364.63922119140625,
+            "maximum_ms": 392.0291748046875
+          }
+        ]
+      }
+    }
+  }
+}
