@@ -1,36 +1,24 @@
 #!/usr/bin/env python3
+# ruff: noqa: F722
 import argparse
 import json
 import math
 import statistics
-from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 
 import torch
+from beartype import beartype
+from jaxtyping import Float, jaxtyped
 from torch import Tensor
 
+from gram_newton_schulz_ampere.benchmark_schema import (
+    BenchmarkConfig,
+    MatrixOperation,
+)
 from gram_newton_schulz_ampere.newton_schulz import (
     GramNewtonSchulz,
     StandardNewtonSchulz,
 )
-
-
-@dataclass(frozen=True)
-class BenchmarkConfig:
-    shapes: tuple[tuple[int, int], ...]
-    batch_sizes: tuple[int, ...]
-    coefficients: tuple[tuple[float, float, float], ...]
-    reset_iterations: tuple[int, ...]
-    operations: tuple[str, ...]
-    warmups: int
-    repeats: int
-    seed: int
-    dtype: str
-    device: str
-    epsilon: float
-    compile_operations: bool
-    output: Path
 
 
 def parse_shape(value: str) -> tuple[int, int]:
@@ -115,12 +103,16 @@ def select_dtype(name: str) -> torch.dtype:
     raise ValueError(f"unsupported dtype {name}")
 
 
+@jaxtyped(typechecker=beartype)
 def time_operation(
-    operation: Callable[[Tensor], Tensor],
-    matrix: Tensor,
+    operation: MatrixOperation,
+    matrix: Float[Tensor, "batch rows columns"],
     warmups: int,
     repeats: int,
-) -> tuple[dict[str, float | list[float]], Tensor]:
+) -> tuple[
+    dict[str, float | list[float]],
+    Float[Tensor, "batch rows columns"],
+]:
     completed_warmups = 0
     while completed_warmups < warmups:
         operation(matrix)
@@ -146,7 +138,11 @@ def time_operation(
     }, output
 
 
-def relative_error(candidate: Tensor, reference: Tensor) -> float:
+@jaxtyped(typechecker=beartype)
+def relative_error(
+    candidate: Float[Tensor, "batch rows columns"],
+    reference: Float[Tensor, "batch rows columns"],
+) -> float:
     difference_norm = torch.linalg.vector_norm(candidate.float() - reference.float())
     reference_norm = torch.linalg.vector_norm(reference.float())
     return float(
@@ -156,7 +152,10 @@ def relative_error(candidate: Tensor, reference: Tensor) -> float:
     )
 
 
-def orthogonality_residual(output: Tensor) -> float:
+@jaxtyped(typechecker=beartype)
+def orthogonality_residual(
+    output: Float[Tensor, "batch rows columns"],
+) -> float:
     gram = (
         output.mT @ output
         if output.shape[-2] > output.shape[-1]
@@ -169,7 +168,7 @@ def orthogonality_residual(output: Tensor) -> float:
 
 def build_operations(
     config: BenchmarkConfig,
-) -> tuple[dict[str, Callable[[Tensor], Tensor]], Callable[[Tensor], Tensor]]:
+) -> tuple[dict[str, MatrixOperation], MatrixOperation]:
     torch_operation = GramNewtonSchulz(
         ns_epsilon=config.epsilon,
         ns_backend="torch",
@@ -177,7 +176,7 @@ def build_operations(
         gram_newton_schulz_reset_iterations=config.reset_iterations,
         ns_compile=config.compile_operations,
     )
-    operations: dict[str, Callable[[Tensor], Tensor]] = {
+    operations: dict[str, MatrixOperation] = {
         "standard": StandardNewtonSchulz(
             ns_epsilon=config.epsilon,
             ns_backend="torch",
