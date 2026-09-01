@@ -18,6 +18,7 @@ def compile_newton_schulz_operation(
     enabled: bool,
     dynamic: bool,
 ) -> Callable[[Tensor], Tensor]:
+    """Apply the static or dynamic Torch compile policy to one operation."""
     if not enabled:
         return operation
     if dynamic:
@@ -54,6 +55,7 @@ def build_standard_newton_schulz_operation(
     dynamic_compile: bool,
     normalize_input: bool,
 ) -> Callable[[Tensor], Tensor]:
+    """Bind Standard Newton--Schulz math to one backend and compile policy."""
     coefficient_values = tuple(
         tuple(float(coefficient) for coefficient in iteration_coefficients)
         for iteration_coefficients in coefficients
@@ -65,7 +67,11 @@ def build_standard_newton_schulz_operation(
             matrix = matrix.to(torch.float32)
             matrix = matrix / (matrix.norm(dim=(-2, -1), keepdim=True) + epsilon)
             matrix = matrix.to(torch.float16)
-        for coefficient_one, coefficient_two, coefficient_three in coefficient_values:
+        for (
+            identity_coefficient,
+            gram_coefficient,
+            gram_squared_coefficient,
+        ) in coefficient_values:
             if tall_skinny:
                 gram_matrix = backend.symmetric_matmul(matrix.mT, matrix)
             else:
@@ -74,22 +80,22 @@ def build_standard_newton_schulz_operation(
                 gram_matrix,
                 gram_matrix,
                 accumulator=gram_matrix,
-                alpha=coefficient_three,
-                beta=coefficient_two,
+                alpha=gram_squared_coefficient,
+                beta=gram_coefficient,
             )
             if tall_skinny:
                 matrix = backend.matmul_add(
                     matrix,
                     polynomial,
                     accumulator=matrix,
-                    beta=coefficient_one,
+                    beta=identity_coefficient,
                 )
             else:
                 matrix = backend.matmul_add(
                     polynomial,
                     matrix,
                     accumulator=matrix,
-                    beta=coefficient_one,
+                    beta=identity_coefficient,
                 )
         return matrix
 
@@ -109,6 +115,7 @@ def build_gram_newton_schulz_operation(
     dynamic_compile: bool,
     normalize_input: bool,
 ) -> Callable[[Tensor], Tensor]:
+    """Bind Gram Newton--Schulz math to one backend and compile policy."""
     coefficient_values = tuple(
         tuple(float(coefficient) for coefficient in iteration_coefficients)
         for iteration_coefficients in coefficients
@@ -137,7 +144,7 @@ def build_gram_newton_schulz_operation(
         )
         accumulated_polynomial = None
         for iteration, coefficients_for_iteration in enumerate(coefficient_values):
-            coefficient_one, coefficient_two, coefficient_three = (
+            identity_coefficient, gram_coefficient, gram_squared_coefficient = (
                 coefficients_for_iteration
             )
             if iteration != 0 and iteration in reset_iteration_values:
@@ -157,36 +164,37 @@ def build_gram_newton_schulz_operation(
                 gram_matrix,
                 gram_matrix,
                 accumulator=gram_matrix,
-                alpha=coefficient_three,
-                beta=coefficient_two,
+                alpha=gram_squared_coefficient,
+                beta=gram_coefficient,
             )
             if accumulated_polynomial is None:
                 accumulated_polynomial = polynomial.add(
                     identity,
-                    alpha=coefficient_one,
+                    alpha=identity_coefficient,
                 )
             else:
                 accumulated_polynomial = backend.symmetric_batch_matrix_matrix_product(
                     accumulated_polynomial,
                     polynomial,
                     accumulator=accumulated_polynomial,
-                    beta=coefficient_one,
+                    beta=identity_coefficient,
                 )
-            if (
+            update_gram_for_next_iteration = (
                 iteration < len(coefficient_values) - 1
                 and iteration + 1 not in reset_iteration_values
-            ):
+            )
+            if update_gram_for_next_iteration:
                 gram_polynomial = backend.symmetric_batch_matrix_matrix_product(
                     gram_matrix,
                     polynomial,
                     accumulator=gram_matrix,
-                    beta=coefficient_one,
+                    beta=identity_coefficient,
                 )
                 gram_matrix = backend.symmetric_batch_matrix_matrix_product(
                     polynomial,
                     gram_polynomial,
                     accumulator=gram_polynomial,
-                    beta=coefficient_one,
+                    beta=identity_coefficient,
                 )
         if accumulated_polynomial is None:
             raise RuntimeError("Gram Newton--Schulz requires coefficients")

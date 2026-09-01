@@ -20,9 +20,23 @@ class CutlassJitModule(Protocol):
         right_column_major: bool,
     ) -> None: ...
 
+    def cutlass_symmetric_baddbmm(
+        self,
+        accumulator: Tensor,
+        left: Tensor,
+        right: Tensor,
+        output: Tensor,
+        alpha: float,
+        beta: float,
+        left_column_major: bool,
+        right_column_major: bool,
+    ) -> None: ...
+
 
 class MatrixBackend(Protocol):
-    def symmetric_matmul(self, left: Tensor, right: Tensor) -> Tensor: ...
+    def symmetric_matmul(self, left: Tensor, right: Tensor) -> Tensor:
+        """Multiply matrices whose product is guaranteed symmetric by the caller."""
+        ...
 
     def symmetric_batch_matrix_matrix_product(
         self,
@@ -31,7 +45,12 @@ class MatrixBackend(Protocol):
         accumulator: Tensor,
         alpha: float = 1.0,
         beta: float = 1.0,
-    ) -> Tensor: ...
+    ) -> Tensor:
+        """Return ``alpha * left @ right + beta * accumulator``.
+
+        The caller guarantees that this result is symmetric.
+        """
+        ...
 
     def matmul(self, left: Tensor, right: Tensor) -> Tensor: ...
 
