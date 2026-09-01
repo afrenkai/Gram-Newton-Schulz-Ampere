@@ -34,9 +34,7 @@ class CutlassJitModule(Protocol):
 
 
 class MatrixBackend(Protocol):
-    def symmetric_matmul(self, left: Tensor, right: Tensor) -> Tensor:
-        """Multiply matrices whose product is guaranteed symmetric by the caller."""
-        ...
+    def symmetric_matmul(self, left: Tensor, right: Tensor) -> Tensor: ...
 
     def symmetric_batch_matrix_matrix_product(
         self,

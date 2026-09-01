@@ -18,7 +18,6 @@ def compile_newton_schulz_operation(
     enabled: bool,
     dynamic: bool,
 ) -> Callable[[Tensor], Tensor]:
-    """Apply the static or dynamic Torch compile policy to one operation."""
     if not enabled:
         return operation
     if dynamic:
@@ -55,7 +54,6 @@ def build_standard_newton_schulz_operation(
     dynamic_compile: bool,
     normalize_input: bool,
 ) -> Callable[[Tensor], Tensor]:
-    """Bind Standard Newton--Schulz math to one backend and compile policy."""
     coefficient_values = tuple(
         tuple(float(coefficient) for coefficient in iteration_coefficients)
         for iteration_coefficients in coefficients
@@ -115,7 +113,6 @@ def build_gram_newton_schulz_operation(
     dynamic_compile: bool,
     normalize_input: bool,
 ) -> Callable[[Tensor], Tensor]:
-    """Bind Gram Newton--Schulz math to one backend and compile policy."""
     coefficient_values = tuple(
         tuple(float(coefficient) for coefficient in iteration_coefficients)
         for iteration_coefficients in coefficients
